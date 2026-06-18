@@ -56,8 +56,9 @@ export default function AppLayout() {
   const { hour } = getBSTTime();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Subscribe to partner's real-time presence
+  // Subscribe to partner's real-time presence and rehydrate timer
   useEffect(() => {
+    useTimerStore.getState().rehydrate();
     if (!partner?.uid) return;
     const unsub = subscribeToPartnerPresence(partner.uid, (presence) => {
       setPartnerStudying(presence?.isStudying || false);

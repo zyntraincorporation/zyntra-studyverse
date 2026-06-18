@@ -109,13 +109,13 @@ export default function RevisionPage() {
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5">
+    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5 pb-24">
       {/* Header */}
       <div>
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
           <RotateCcw size={20} className="text-cyan-400" /> Spaced Revision
         </h2>
-        <p className="text-sm text-slate-500 mt-1">Intervals: 7 → 14 → 30 days</p>
+        <p className="text-sm text-slate-500 mt-1">Intervals: 1 → 3 → 7 → 14 → 30 days</p>
       </div>
 
       {/* Stats */}

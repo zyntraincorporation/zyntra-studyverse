@@ -22,37 +22,75 @@ export const useAuthStore = create(
   )
 );
 
-// ── Timer Store ────────────────────────────────────────────────────────────────
-export const useTimerStore = create((set, get) => ({
-  isRunning:  false,
-  subject:    null,
-  studyType:  null,
-  chapter:    null,
-  startTime:  null,
-  elapsed:    0,
-  intervalId: null,
+// ── Timer Store (timestamp-based — drift-free) ────────────────────────────────
+export const useTimerStore = create(
+  persist(
+    (set, get) => ({
+      isRunning:  false,
+      subject:    null,
+      studyType:  null,
+      chapter:    null,
+      startTime:  null,   // ISO string of when timer started
+      startEpoch: null,   // ms epoch — used to compute elapsed accurately
+      elapsed:    0,      // seconds (computed on each tick, not accumulated)
+      _tickId:    null,   // setInterval id (not persisted)
 
-  start: (subject, studyType = 'self', chapter = null) => {
-    const startTime  = new Date().toISOString();
-    const intervalId = setInterval(() => set((s) => ({ elapsed: s.elapsed + 1 })), 1000);
-    set({ isRunning: true, subject, studyType, chapter, startTime, elapsed: 0, intervalId });
-  },
+      start: (subject, studyType = 'self', chapter = null) => {
+        const now       = new Date();
+        const startTime = now.toISOString();
+        const startEpoch = now.getTime();
 
-  stop: () => {
-    const { intervalId, subject, studyType, chapter, startTime, elapsed } = get();
-    if (intervalId) clearInterval(intervalId);
-    const endTime         = new Date().toISOString();
-    const durationMinutes = Math.round(elapsed / 60);
-    set({ isRunning: false, subject: null, studyType: null, chapter: null, startTime: null, elapsed: 0, intervalId: null });
-    return { subject, studyType, chapter, startTime, endTime, durationMinutes };
-  },
+        const tickId = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - get().startEpoch) / 1000);
+          set({ elapsed });
+        }, 1000);
 
-  reset: () => {
-    const { intervalId } = get();
-    if (intervalId) clearInterval(intervalId);
-    set({ isRunning: false, subject: null, studyType: null, chapter: null, startTime: null, elapsed: 0, intervalId: null });
-  },
-}));
+        set({ isRunning: true, subject, studyType, chapter, startTime, startEpoch, elapsed: 0, _tickId: tickId });
+      },
+
+      stop: () => {
+        const { _tickId, subject, studyType, chapter, startTime, startEpoch } = get();
+        if (_tickId) clearInterval(_tickId);
+
+        const endTime         = new Date().toISOString();
+        const durationSeconds = Math.floor((Date.now() - startEpoch) / 1000);
+        const durationMinutes = Math.round(durationSeconds / 60);
+
+        set({ isRunning: false, subject: null, studyType: null, chapter: null,
+              startTime: null, startEpoch: null, elapsed: 0, _tickId: null });
+        return { subject, studyType, chapter, startTime, endTime, durationMinutes };
+      },
+
+      reset: () => {
+        const { _tickId } = get();
+        if (_tickId) clearInterval(_tickId);
+        set({ isRunning: false, subject: null, studyType: null, chapter: null,
+              startTime: null, startEpoch: null, elapsed: 0, _tickId: null });
+      },
+
+      // Called on app mount to resume a running timer if page was refreshed
+      rehydrate: () => {
+        const { isRunning, startEpoch, _tickId } = get();
+        if (!isRunning || !startEpoch || _tickId) return; // already ticking or not running
+
+        const elapsed = Math.floor((Date.now() - startEpoch) / 1000);
+        const tickId  = setInterval(() => {
+          set({ elapsed: Math.floor((Date.now() - get().startEpoch) / 1000) });
+        }, 1000);
+        set({ elapsed, _tickId: tickId });
+      },
+    }),
+    {
+      name: 'zyntra-timer-v3',
+      // Don't persist the interval id — it's always recreated
+      partialize: (s) => ({
+        isRunning: s.isRunning, subject: s.subject, studyType: s.studyType,
+        chapter: s.chapter, startTime: s.startTime, startEpoch: s.startEpoch, elapsed: s.elapsed,
+      }),
+    }
+  )
+);
+
 
 // ── UI Store (toasts, modals) ──────────────────────────────────────────────────
 export const useUIStore = create((set, get) => ({

@@ -166,7 +166,7 @@ export default function MistakePage() {
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5">
+    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5 pb-24">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

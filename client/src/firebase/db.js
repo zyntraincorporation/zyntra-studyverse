@@ -104,9 +104,19 @@ export async function deleteSession(sessionId) {
 }
 
 export async function getTodayStudyMinutes(userId) {
-  const today = getBSTDateString();
+  const today    = getBSTDateString();
   const sessions = await getTodaySessions(userId, today);
-  return sessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
+  const total    = sessions.reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
+  const custom   = sessions
+    .filter(s => s.type === 'custom')
+    .reduce((sum, s) => sum + (s.durationMinutes || 0), 0);
+  return { total, custom, timer: total - custom };
+}
+
+// Chat eligible minutes: custom capped at 120 min, timer/pomodoro uncapped
+export async function getChatEligibleMinutes(userId) {
+  const { custom, timer } = await getTodayStudyMinutes(userId);
+  return Math.min(custom, 120) + timer;
 }
 
 export function subscribeToTodaySessions(userId, date, callback) {
@@ -279,19 +289,31 @@ export async function deleteMistake(mistakeId) {
 // REVISIONS (spaced repetition)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const REVISION_INTERVALS = [7, 14, 30];
+// 5-level spaced repetition: 1 → 3 → 7 → 14 → 30 days
+const REVISION_INTERVALS = [1, 3, 7, 14, 30];
 
 function getNextDueDate(revisionCount, today) {
-  const interval = REVISION_INTERVALS[Math.min(revisionCount - 1, REVISION_INTERVALS.length - 1)];
+  const idx      = Math.min(revisionCount - 1, REVISION_INTERVALS.length - 1);
+  const interval = REVISION_INTERVALS[idx];
   const d = new Date(`${today}T00:00:00+06:00`);
   d.setUTCDate(d.getUTCDate() + interval);
   return getBSTDateString(d);
 }
 
+// Statuses that are eligible for revision scheduling
+const REVISED_STATUSES = [
+  'completed', 'revised', // legacy
+  'revised_1', 'revised_2', 'revised_3', 'revised_4', 'revised_5',
+];
+
 export async function getDueRevisions(userId) {
   const today = getBSTDateString();
-  // Get completed chapters
-  const chapQ = query(col('chapters'), where('userId', '==', userId), where('status', 'in', ['completed', 'revised']));
+  // Get all chapters with a completed/revised status
+  const chapQ = query(
+    col('chapters'),
+    where('userId', '==', userId),
+    where('status', 'in', REVISED_STATUSES)
+  );
   const chapSnap = await getDocs(chapQ);
   const chapters = chapSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
@@ -309,26 +331,46 @@ export async function getDueRevisions(userId) {
   const dueToday = [], upcoming = [];
   chapters.forEach(ch => {
     const latest   = latestByChapter[ch.id];
+    const count    = latest ? latest.revisionCount : 0;
+
+    // After 5 revisions, chapter is fully revised — skip
+    if (count >= 5) return;
+
     const lastDate = latest
       ? (latest.revisedAt?.toDate?.() || new Date(latest.revisedAt)).toISOString().slice(0, 10)
       : (ch.lastUpdated?.toDate?.() || new Date()).toISOString().slice(0, 10);
-    const count    = latest ? latest.revisionCount : 0;
+
     const interval = REVISION_INTERVALS[Math.min(count, REVISION_INTERVALS.length - 1)];
     const d = new Date(`${lastDate}T00:00:00+06:00`);
     d.setUTCDate(d.getUTCDate() + interval);
     const dueDate = getBSTDateString(d);
+
     const item = {
       chapterId: ch.id, subject: ch.subject, chapterNumber: ch.chapterNumber,
-      chapterName: ch.chapterName, revisionCount: count, dueDate, overdue: dueDate < today,
+      chapterName: ch.chapterName, revisionCount: count, dueDate,
+      overdue: dueDate < today,
+      nextInterval: REVISION_INTERVALS[Math.min(count + 1, REVISION_INTERVALS.length - 1)],
     };
     if (dueDate <= today) dueToday.push(item);
     else {
       const weekOut = new Date(`${today}T00:00:00+06:00`);
-      weekOut.setUTCDate(weekOut.getUTCDate() + 7);
+      weekOut.setUTCDate(weekOut.getUTCDate() + 14); // show 2 weeks ahead
       if (dueDate <= getBSTDateString(weekOut)) upcoming.push(item);
     }
   });
-  return { dueToday, upcoming, today };
+
+  // Sort due today: overdue first, then by dueDate
+  dueToday.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  upcoming.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  const totalEligible = chapters.length;
+  const totalRevised5 = chapters.filter(ch => {
+    const st = ch.status;
+    return st === 'revised_5' || (latestByChapter[ch.id]?.revisionCount >= 5);
+  }).length;
+  const completionPct = totalEligible ? Math.round((totalRevised5 / totalEligible) * 100) : 0;
+
+  return { dueToday, upcoming, today, completionPct, totalEligible, totalRevised5 };
 }
 
 export async function logRevision(userId, data) {
@@ -337,14 +379,18 @@ export async function logRevision(userId, data) {
     query(col('revisions'), where('userId', '==', userId), where('chapterId', '==', data.chapterId))
   )).size;
   const revisionCount = prevCount + 1;
-  const nextDueDate   = revisionCount < 3 ? getNextDueDate(revisionCount, today) : null;
+  // After 5 revisions nextDueDate is null (fully revised)
+  const nextDueDate = revisionCount < REVISION_INTERVALS.length
+    ? getNextDueDate(revisionCount, today)
+    : null;
 
   const docRef = await addDoc(col('revisions'), {
     ...data, userId, revisionCount, nextDueDate, revisedAt: now(),
   });
 
-  // Update chapter status to revised
-  await setDoc(ref('chapters', data.chapterId), { status: 'revised', lastUpdated: now() }, { merge: true });
+  // Update chapter status to revised_N (capped at revised_5)
+  const revStatus = revisionCount >= 5 ? 'revised_5' : `revised_${revisionCount}`;
+  await setDoc(ref('chapters', data.chapterId), { status: revStatus, lastUpdated: now() }, { merge: true });
 
   return { id: docRef.id, revisionCount, nextDueDate };
 }
@@ -564,13 +610,15 @@ export function subscribeToDailyLeaderboard(date, callback) {
 export async function recalculateAndSaveLeaderboard(userId, displayName) {
   const today    = getBSTDateString();
   const sessions = await getTodaySessions(userId, today);
-  const minutes  = sessions.reduce((s, sess) => s + (sess.durationMinutes || 0), 0);
-  const completed = sessions.filter(s => s.completed !== false).length;
-  const { w } = LEADERBOARD_SCORE_WEIGHTS;
-  const score  = Math.min(100,
-    minutes * 2 + completed * 10
-  );
-  await updateLeaderboard(userId, today, { displayName, studyMinutes: minutes, sessionsCompleted: completed, score, updatedAt: new Date().toISOString() });
+  // Custom sessions are EXCLUDED from leaderboard scoring
+  const eligibleSessions = sessions.filter(s => s.type !== 'custom');
+  const minutes   = eligibleSessions.reduce((s, sess) => s + (sess.durationMinutes || 0), 0);
+  const completed = eligibleSessions.filter(s => s.completed !== false).length;
+  const score = Math.min(100, minutes * 2 + completed * 10);
+  await updateLeaderboard(userId, today, {
+    displayName, studyMinutes: minutes, sessionsCompleted: completed,
+    score, updatedAt: new Date().toISOString(),
+  });
   return { minutes, completed, score };
 }
 
@@ -586,14 +634,19 @@ export function subscribeToChatRoom(callback) {
   });
 }
 
-export async function updateChatStudyMinutes(userId, displayName, minutes) {
+export async function updateChatStudyMinutes(userId, displayName, minutesOrObj) {
+  // Accept both a raw number (legacy) and the new { total, custom, timer } object
+  const eligible = typeof minutesOrObj === 'object'
+    ? Math.min(minutesOrObj.custom ?? 0, 120) + (minutesOrObj.timer ?? 0)
+    : minutesOrObj; // legacy callers pass a plain number — treat as-is
+
   const fieldKey = `${userId}_minutes`;
   const nameKey  = `${userId}_name`;
   const roomRef  = ref('chat', chatRoomId);
   await runTransaction(db, async (tx) => {
     const room = await tx.get(roomRef);
     const data = room.exists() ? room.data() : {};
-    const updatedData = { ...data, [fieldKey]: minutes, [nameKey]: displayName };
+    const updatedData = { ...data, [fieldKey]: eligible, [nameKey]: displayName };
 
     // Collect all user minute entries
     const allMinuteKeys = Object.keys(updatedData).filter(k => k.endsWith('_minutes'));
@@ -606,7 +659,6 @@ export async function updateChatStudyMinutes(userId, displayName, minutes) {
       updatedData.unlockedAt  = Timestamp.fromDate(now);
       updatedData.expiresAt   = Timestamp.fromDate(exp);
     } else if (data.unlocked) {
-      // Check if chat window expired
       const expiresAt = data.expiresAt?.toDate?.();
       if (expiresAt && new Date() > expiresAt) {
         updatedData.unlocked = false;
@@ -779,7 +831,35 @@ export async function getHeatmapData(userId, days = 90) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PER-USER SCHEDULE (custom check-in system)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const scheduleCol = (uid) => collection(db, 'users', uid, 'schedule');
+
+export async function createScheduleEntry(userId, data) {
+  const docRef = await addDoc(scheduleCol(userId), {
+    ...data, userId, status: 'pending', createdAt: now(),
+  });
+  return docRef.id;
+}
+
+export async function getScheduleEntries(userId, date) {
+  const q = query(scheduleCol(userId), where('date', '==', date), orderBy('time', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function updateScheduleEntry(userId, entryId, data) {
+  await setDoc(doc(db, 'users', userId, 'schedule', entryId), { ...data, updatedAt: now() }, { merge: true });
+}
+
+export async function deleteScheduleEntry(userId, entryId) {
+  await deleteDoc(doc(db, 'users', userId, 'schedule', entryId));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AI ANALYSIS (calls OpenRouter directly from client)
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function generateAndSaveAIReport(userId, days = 7) {

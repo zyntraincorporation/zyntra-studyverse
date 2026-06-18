@@ -34,18 +34,27 @@ export default function WordForge() {
 
   function handleAIAutofill() {
     if (!form.word.trim()) return;
-    aiAutofill(form.word, {
-      onSuccess: (data) => {
-        setForm(f => ({
-          ...f,
-          banglaMeaning:  data.banglaMeaning  || f.banglaMeaning,
-          pronunciation:  data.pronunciation  || f.pronunciation,
-          synonyms:       (data.synonyms || []).join(', '),
-          antonyms:       (data.antonyms || []).join(', '),
-          antonymMeaning: data.antonymMeaning || '',
-        }));
-      },
-    });
+    try {
+      aiAutofill(form.word, {
+        onSuccess: (data) => {
+          if (!data) return;
+          setForm(f => ({
+            ...f,
+            banglaMeaning:  data.banglaMeaning  || f.banglaMeaning,
+            pronunciation:  data.pronunciation  || f.pronunciation,
+            synonyms:       (data.synonyms || []).join(', '),
+            antonyms:       (data.antonyms || []).join(', '),
+            antonymMeaning: data.antonymMeaning || '',
+          }));
+        },
+        onError: () => {
+          // Silent fail — AI is optional, form still works
+          console.warn('[WordForge] AI autofill unavailable');
+        },
+      });
+    } catch (err) {
+      console.warn('[WordForge] AI autofill error:', err);
+    }
   }
 
   function handleSubmit() {

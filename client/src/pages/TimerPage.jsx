@@ -365,7 +365,7 @@ function CustomLog() {
 export default function TimerPage() {
   const [tab, setTab] = useState('free');
   return (
-    <div className="p-4 lg:p-6 max-w-xl mx-auto space-y-5">
+    <div className="p-4 lg:p-6 max-w-xl mx-auto space-y-5 pb-24">
       <div className="flex gap-1 bg-white/[0.03] border border-white/10 rounded-2xl p-1">
         {[{ key:'free', label:'⏱ Free Timer' }, { key:'pomo', label:'🍅 Pomodoro' }, { key:'log', label:'📝 Custom Log' }].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}

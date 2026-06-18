@@ -23,6 +23,9 @@ service cloud.firestore {
       match /settings/{docId} {
         allow read, write: if isOwner(userId);
       }
+      match /schedule/{docId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────

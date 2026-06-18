@@ -108,8 +108,13 @@ export default function LeaderboardPage() {
     Promise.all(uids.map(uid =>
       getSessionsByDateRange(uid, start, end).then(sessions => ({
         uid,
-        minutes:  sessions.reduce((s, se) => s + (se.durationMinutes || 0), 0),
-        sessions: sessions.filter(s => s.completed !== false).length,
+        // Custom sessions excluded from leaderboard
+        minutes:  sessions
+          .filter(s => s.type !== 'custom')
+          .reduce((s, se) => s + (se.durationMinutes || 0), 0),
+        sessions: sessions
+          .filter(s => s.type !== 'custom' && s.completed !== false)
+          .length,
         name:     uid === user.uid ? user.displayName : partner?.displayName,
       }))
     )).then(results => {
@@ -135,7 +140,7 @@ export default function LeaderboardPage() {
   const msg = leaderMsg();
 
   return (
-    <div className="min-h-screen bg-[#080b14] p-4 lg:p-6">
+    <div className="min-h-screen bg-[#080b14] p-4 lg:p-6 pb-24">
       <div className="max-w-lg mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
@@ -161,9 +166,9 @@ export default function LeaderboardPage() {
           ))}
         </div>
 
-        {/* Score formula */}
         <div className="mb-4 px-4 py-2 bg-white/[0.02] border border-white/[0.06] rounded-xl text-center">
           <p className="text-[11px] text-slate-500">Score = study minutes × 2 + sessions × 10</p>
+          <p className="text-[10px] text-slate-600 mt-0.5">⚠️ Custom study sessions are not counted</p>
         </div>
 
         {/* Cards */}

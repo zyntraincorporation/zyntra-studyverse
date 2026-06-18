@@ -15,42 +15,50 @@ import VocabProgressWidget  from './widgets/VocabProgressWidget';
 import UpcomingScheduleWidget from './widgets/UpcomingScheduleWidget';
 import WeeklyAnalyticsWidget from './widgets/WeeklyAnalyticsWidget';
 import ChatStatusWidget     from './widgets/ChatStatusWidget';
+import BuetProgressWidget   from './widgets/BuetProgressWidget';
+import HscProgressWidget    from './widgets/HscProgressWidget';
 
 import 'react-grid-layout/css/styles.css';
 
 const ResponsiveGrid = WidthProvider(Responsive);
 
 const ALL_WIDGETS = [
-  { id: 'buet',        label: 'BUET Countdown',    Component: BuetCountdownWidget,   defaultH: 3 },
-  { id: 'streak',      label: 'Study Streak',       Component: StudyStreakWidget,      defaultH: 3 },
-  { id: 'partner',     label: 'Partner Status',     Component: PartnerStatusWidget,   defaultH: 3 },
-  { id: 'leaderboard', label: 'Leaderboard',        Component: LeaderboardWidget,     defaultH: 4 },
-  { id: 'vocab',       label: 'Vocabulary Progress',Component: VocabProgressWidget,   defaultH: 3 },
-  { id: 'schedule',    label: 'Today\'s Schedule',  Component: UpcomingScheduleWidget,defaultH: 4 },
-  { id: 'analytics',   label: 'Weekly Analytics',   Component: WeeklyAnalyticsWidget, defaultH: 4 },
-  { id: 'chat',        label: 'Chat Status',        Component: ChatStatusWidget,      defaultH: 3 },
+  { id: 'buet',        label: 'BUET Countdown',     Component: BuetCountdownWidget,   defaultH: 3 },
+  { id: 'streak',      label: 'Study Streak',        Component: StudyStreakWidget,      defaultH: 3 },
+  { id: 'partner',     label: 'Partner Status',      Component: PartnerStatusWidget,   defaultH: 3 },
+  { id: 'chat',        label: 'Chat Status',         Component: ChatStatusWidget,      defaultH: 3 },
+  { id: 'buetprog',   label: 'BUET Chapter Progress',Component: BuetProgressWidget,   defaultH: 5 },
+  { id: 'hscprog',    label: 'HSC All Subjects',     Component: HscProgressWidget,    defaultH: 6 },
+  { id: 'schedule',    label: "Today's Schedule",   Component: UpcomingScheduleWidget,defaultH: 4 },
+  { id: 'analytics',   label: 'Weekly Analytics',    Component: WeeklyAnalyticsWidget, defaultH: 4 },
+  { id: 'leaderboard', label: 'Leaderboard',         Component: LeaderboardWidget,     defaultH: 4 },
+  { id: 'vocab',       label: 'Vocabulary Progress', Component: VocabProgressWidget,   defaultH: 3 },
 ];
 
 const DEFAULT_LAYOUT = {
   lg: [
-    { i: 'buet',        x: 0, y: 0,  w: 1, h: 3 },
-    { i: 'streak',      x: 1, y: 0,  w: 1, h: 3 },
-    { i: 'partner',     x: 2, y: 0,  w: 1, h: 3 },
-    { i: 'chat',        x: 3, y: 0,  w: 1, h: 3 },
-    { i: 'schedule',    x: 0, y: 3,  w: 2, h: 4 },
-    { i: 'analytics',   x: 2, y: 3,  w: 2, h: 4 },
-    { i: 'leaderboard', x: 0, y: 7,  w: 2, h: 4 },
-    { i: 'vocab',       x: 2, y: 7,  w: 2, h: 3 },
+    { i: 'buet',     x: 0, y: 0,  w: 1, h: 3 },
+    { i: 'streak',   x: 1, y: 0,  w: 1, h: 3 },
+    { i: 'partner',  x: 2, y: 0,  w: 1, h: 3 },
+    { i: 'chat',     x: 3, y: 0,  w: 1, h: 3 },
+    { i: 'buetprog', x: 0, y: 3,  w: 2, h: 5 },
+    { i: 'hscprog',  x: 2, y: 3,  w: 2, h: 6 },
+    { i: 'schedule', x: 0, y: 8,  w: 2, h: 4 },
+    { i: 'analytics',x: 2, y: 9,  w: 2, h: 4 },
+    { i: 'leaderboard', x: 0, y: 12, w: 2, h: 4 },
+    { i: 'vocab',    x: 2, y: 13, w: 2, h: 3 },
   ],
   md: [
-    { i: 'buet',    x: 0, y: 0, w: 1, h: 3 },
-    { i: 'streak',  x: 1, y: 0, w: 1, h: 3 },
-    { i: 'partner', x: 0, y: 3, w: 1, h: 3 },
-    { i: 'chat',    x: 1, y: 3, w: 1, h: 3 },
-    { i: 'schedule',x: 0, y: 6, w: 2, h: 4 },
-    { i: 'analytics',x:0, y:10, w: 2, h: 4 },
-    { i: 'leaderboard',x:0,y:14,w: 2, h: 4 },
-    { i: 'vocab',   x: 0, y:18, w: 2, h: 3 },
+    { i: 'buet',     x: 0, y: 0, w: 1, h: 3 },
+    { i: 'streak',   x: 1, y: 0, w: 1, h: 3 },
+    { i: 'partner',  x: 0, y: 3, w: 1, h: 3 },
+    { i: 'chat',     x: 1, y: 3, w: 1, h: 3 },
+    { i: 'buetprog', x: 0, y: 6, w: 2, h: 5 },
+    { i: 'hscprog',  x: 0, y: 11,w: 2, h: 6 },
+    { i: 'schedule', x: 0, y: 17,w: 2, h: 4 },
+    { i: 'analytics',x: 0, y: 21,w: 2, h: 4 },
+    { i: 'leaderboard',x:0,y: 25,w: 2, h: 4 },
+    { i: 'vocab',    x: 0, y: 29,w: 2, h: 3 },
   ],
   sm: ALL_WIDGETS.map((w, i) => ({ i: w.id, x: 0, y: i * 4, w: 2, h: w.defaultH })),
 };
@@ -104,7 +112,7 @@ export default function DashboardPage() {
   const day    = getBSTDayName();
 
   return (
-    <div className="min-h-screen bg-[#080b14]">
+    <div className="min-h-screen bg-[#080b14] pb-24">
       {/* Live study banner */}
       <LiveStudyBanner />
 

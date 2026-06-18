@@ -95,7 +95,7 @@ export default function AIReportPage() {
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5">
+    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5 pb-24">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>

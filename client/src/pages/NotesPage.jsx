@@ -70,7 +70,7 @@ export default function NotesPage() {
   };
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-6">
+    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-6 pb-24">
       {/* Today's note */}
       <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <div className="flex items-center justify-between mb-3">

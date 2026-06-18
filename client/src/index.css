@@ -127,4 +127,26 @@
 
   .animate-fade-in  { animation: fadeIn 0.3s ease-out; }
   .animate-slide-up { animation: slideUp 0.3s ease-out; }
+
+  /* Hide scrollbar but keep scroll functionality */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  /* Bangla text uses Noto Sans Bengali for correct Unicode rendering */
+  .bangla {
+    font-family: 'Noto Sans Bengali', 'Hind Siliguri', 'Kalpurush', sans-serif;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
