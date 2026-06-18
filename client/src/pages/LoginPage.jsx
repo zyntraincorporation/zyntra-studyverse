@@ -1,15 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { loginWithEmail } from '../firebase/auth';
 import { useAuthStore } from '../store';
 import { COUPLE_CONFIG } from '../lib/constants';
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const { isAuthed } = useAuthStore();
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
+
+  useEffect(() => {
+    if (isAuthed) {
+      navigate('/', { replace: true });
+    }
+  }, [isAuthed, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
