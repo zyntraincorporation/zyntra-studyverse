@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Responsive, WidthProvider } from 'react-grid-layout';
+import { Responsive, WidthProvider } from 'react-grid-layout/legacy';
 import { Settings, Plus, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../store';
@@ -17,7 +17,6 @@ import WeeklyAnalyticsWidget from './widgets/WeeklyAnalyticsWidget';
 import ChatStatusWidget     from './widgets/ChatStatusWidget';
 
 import 'react-grid-layout/css/styles.css';
-import 'react-grid-layout/css/resizable.css';
 
 const ResponsiveGrid = WidthProvider(Responsive);
 
