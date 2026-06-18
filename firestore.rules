@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isAuthed()          { return request.auth != null; }
+    function uid()               { return request.auth.uid; }
+    function isOwner(userId)     { return isAuthed() && uid() == userId; }
+
+    // Shared couple access (both authenticated users can read each other's
+    // presence and leaderboard for the real-time couple features)
+    function isCoupleUser() {
+      return isAuthed() && (
+        request.auth.token.email == 'saifulislamnirob45@gmail.com' ||
+        request.auth.token.email == 'shahinurislamliza2@gmail.com'
+      );
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read:  if isCoupleUser();          // partner can read profile
+      allow write: if isOwner(userId);
+      match /settings/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // ── Sessions ──────────────────────────────────────────────────────────────
+    match /sessions/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow create: if isAuthed() && request.resource.data.userId == uid();
+      allow update, delete: if isAuthed() && resource.data.userId == uid();
+    }
+
+    // ── Check-ins ─────────────────────────────────────────────────────────────
+    match /checkins/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow write:  if isCoupleUser();  // setDoc with merge, ID = uid_date
+    }
+
+    // ── Chapters ──────────────────────────────────────────────────────────────
+    match /chapters/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow write:  if isCoupleUser();
+    }
+
+    // ── Revisions ─────────────────────────────────────────────────────────────
+    match /revisions/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow create: if isAuthed() && request.resource.data.userId == uid();
+      allow update, delete: if isAuthed() && resource.data.userId == uid();
+    }
+
+    // ── Notes (private) ───────────────────────────────────────────────────────
+    match /notes/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow write:  if isCoupleUser();
+    }
+
+    // ── Mistakes (private) ────────────────────────────────────────────────────
+    match /mistakes/{docId} {
+      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow create: if isAuthed() && request.resource.data.userId == uid();
+      allow update, delete: if isAuthed() && resource.data.userId == uid();
+    }
+
+    // ── Monthly Targets ───────────────────────────────────────────────────────
+    match /targets/{userId}/months/{month} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── Vocabulary (subcollection per user) ───────────────────────────────────
+    match /vocabulary/{userId}/words/{wordId} {
+      allow read, write: if isOwner(userId);
+    }
+    match /vocabulary/{userId}/reviews/{reviewId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── AI Reports (private) ──────────────────────────────────────────────────
+    match /aiReports/{userId}/reports/{reportId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // ── Presence (shared — both can read each other) ──────────────────────────
+    match /presence/{userId} {
+      allow read:  if isCoupleUser();   // partner can see presence
+      allow write: if isOwner(userId);  // only self can update
+    }
+
+    // ── Leaderboard (shared) ──────────────────────────────────────────────────
+    match /leaderboard/{date} {
+      allow read:  if isCoupleUser();
+      allow write: if isCoupleUser();   // clients update their own entry
+    }
+
+    // ── Chat (both users in the couple) ───────────────────────────────────────
+    match /chat/{roomId} {
+      allow read, write: if isCoupleUser();
+      match /messages/{msgId} {
+        allow read:   if isCoupleUser();
+        allow create: if isCoupleUser();
+        allow delete: if isCoupleUser();  // for client-side cleanup
+      }
+    }
+
+    // ── Notifications (private) ───────────────────────────────────────────────
+    match /notifications/{userId}/items/{notifId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

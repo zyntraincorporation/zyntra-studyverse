@@ -19,6 +19,7 @@ const aiRoutes       = require('./routes/ai');
 const revisionsRoutes = require('./routes/revisions');
 const mistakesRoutes  = require('./routes/mistakes');
 const notesRoutes     = require('./routes/notes');
+const vocabularyRoutes = require('./routes/vocabulary');
 const targetsRoutes   = require('./routes/targets');
 const { startSessionAutoMissWorker } = require('./lib/sessionReconciliation');
 
@@ -61,6 +62,7 @@ app.use('/api/revisions', revisionsRoutes);
 app.use('/api/mistakes',  mistakesRoutes);
 app.use('/api/notes',     notesRoutes);
 app.use('/api/targets',   targetsRoutes);
+app.use('/api/vocabulary', vocabularyRoutes);
 
 // Health check — Render uses this
 // ── Keep-alive: প্রতি ১৪ মিনিটে নিজেকে ping করো ──────────────────────────────

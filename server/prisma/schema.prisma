@@ -9,22 +9,22 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 // ── 1. Daily morning check-ins ────────────────────────────────────────────────
 model DailyCheckin {
-  id                  Int      @id @default(autoincrement())
-  date                String   // YYYY-MM-DD in BST
-  wokeUpAt6           Boolean  @default(false)
-  studiedBeforeCollege Boolean @default(false)
-  preCollegeSubject   String?  // Physics | Chemistry | Math | Biology | Other
-  preCollegeMinutes   Int?
-  notes               String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   Int      @id @default(autoincrement())
+  date                 String   // YYYY-MM-DD in BST
+  wokeUpAt6            Boolean  @default(false)
+  studiedBeforeCollege Boolean  @default(false)
+  preCollegeSubject    String?  // Physics | Chemistry | Math | Biology | Other
+  preCollegeMinutes    Int?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   @@unique([date])   // one checkin per day
   @@map("daily_checkins")
@@ -32,18 +32,18 @@ model DailyCheckin {
 
 // ── 2. Scheduled session logs ─────────────────────────────────────────────────
 model SessionLog {
-  id              Int      @id @default(autoincrement())
-  date            String   // YYYY-MM-DD in BST
-  dayOfWeek       String   // Sunday | Monday | ... | Saturday
-  sessionNumber   Int      // 1 | 2 | 3
-  subject         String   // Physics | Chemistry | Math | Botany | Zoology
-  completed       Boolean  @default(false)
-  actualMinutes   Int      @default(0) // if partial
-  reasonMissed    String?  // Tired | Forgot | Emergency | Laziness | Other
-  didInstead      String?  // free text
-  notes           String?
-  loggedAt        DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  date          String   // YYYY-MM-DD in BST
+  dayOfWeek     String   // Sunday | Monday | ... | Saturday
+  sessionNumber Int      // 1 | 2 | 3
+  subject       String   // Physics | Chemistry | Math | Botany | Zoology
+  completed     Boolean  @default(false)
+  actualMinutes Int      @default(0) // if partial
+  reasonMissed  String?  // Tired | Forgot | Emergency | Laziness | Other
+  didInstead    String?  // free text
+  notes         String?
+  loggedAt      DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([date, sessionNumber]) // one log per session per day
   @@map("session_logs")
@@ -80,15 +80,15 @@ model PracticeSession {
 
 // ── 5. Chapter progress tracker ───────────────────────────────────────────────
 model ChapterProgress {
-  id            Int      @id @default(autoincrement())
-  subject       String   // Physics | Chemistry | HigherMath | Botany | Zoology | ICT
-  chapterNumber Int
-  chapterName   String
-  status        String   @default("not_started") // not_started | in_progress | completed | revised
-  totalTopics   Int?
-  completedTopics Int?   @default(0)
-  lastUpdated   DateTime @default(now()) @updatedAt
-  createdAt     DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  subject         String   // Physics | Chemistry | HigherMath | Botany | Zoology | ICT
+  chapterNumber   Int
+  chapterName     String
+  status          String   @default("not_started") // not_started | in_progress | completed | revised
+  totalTopics     Int?
+  completedTopics Int?     @default(0)
+  lastUpdated     DateTime @default(now()) @updatedAt
+  createdAt       DateTime @default(now())
 
   @@unique([subject, chapterNumber])
   @@map("chapter_progress")
@@ -108,16 +108,16 @@ model AIAnalysisReport {
 
 // ── 7. Revision logs (spaced repetition) ─────────────────────────────────────
 model RevisionLog {
-  id              Int      @id @default(autoincrement())
-  chapterId       Int
-  subject         String
-  chapterNumber   Int
-  chapterName     String
-  revisedAt       DateTime @default(now())
-  revisionCount   Int      @default(1)  // কততম revision
-  nextDueDate     String?               // YYYY-MM-DD BST
-  notes           String?
-  createdAt       DateTime @default(now())
+  id            Int      @id @default(autoincrement())
+  chapterId     Int
+  subject       String
+  chapterNumber Int
+  chapterName   String
+  revisedAt     DateTime @default(now())
+  revisionCount Int      @default(1)  // কততম revision
+  nextDueDate   String?               // YYYY-MM-DD BST
+  notes         String?
+  createdAt     DateTime @default(now())
 
   @@map("revision_logs")
 }
@@ -136,17 +136,17 @@ model DailyNote {
 
 // ── 9. Mistake log ────────────────────────────────────────────────────────────
 model MistakeLog {
-  id            Int      @id @default(autoincrement())
-  date          String   // YYYY-MM-DD BST
-  subject       String   // Physics | Chemistry | Math | etc.
-  topic         String   // chapter/topic name
-  mistakeType   String   // Concept | Formula | Calculation | Silly | Memory
-  description   String   // what went wrong
-  correction    String?  // correct answer/approach
-  source        String?  // Practice | Exam | QB | Homework
-  resolved      Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  date        String   // YYYY-MM-DD BST
+  subject     String   // Physics | Chemistry | Math | etc.
+  topic       String   // chapter/topic name
+  mistakeType String   // Concept | Formula | Calculation | Silly | Memory
+  description String   // what went wrong
+  correction  String?  // correct answer/approach
+  source      String?  // Practice | Exam | QB | Homework
+  resolved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("mistake_logs")
 }
@@ -167,4 +167,71 @@ model MonthlyTarget {
 
   @@unique([yearMonth, subject, chapterNumber])
   @@map("monthly_targets")
+}
+
+// ── 11. Vocabulary words ──────────────────────────────────────────────────────
+// Single-user app: userId is always 'saiful', kept for query filtering
+model VocabularyWord {
+  id             String   @id @default(cuid())
+  userId         String   @default("saiful")
+  word           String
+  banglaMeaning  String
+  pronunciation  String?
+  synonyms       String[] @default([])
+  antonyms       String[] @default([])
+  antonymMeaning String?
+  notes          String?
+  difficulty     Int      @default(1) // 1–5
+  tags           String[] @default([])
+  isArchived     Boolean  @default(false)
+  masteryLevel   Int      @default(0)   // 0–100
+  totalReviews   Int      @default(0)
+  correctCount   Int      @default(0)
+  failCount      Int      @default(0)
+  nextReviewAt   DateTime @default(now())
+  reviewInterval Int      @default(1)   // days
+  correctStreak  Int      @default(0)
+  lastReviewedAt DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  reviews VocabularyReview[]
+
+  @@index([userId])
+  @@index([userId, nextReviewAt])
+  @@index([userId, isArchived])
+  @@map("vocabulary_words")
+}
+
+// ── 12. Vocabulary reviews ────────────────────────────────────────────────────
+model VocabularyReview {
+  id         String   @id @default(cuid())
+  wordId     String
+  userId     String   @default("saiful")
+  mode       String   // "en_to_bn" | "bn_to_en" | "synonym_to_word" | "meaning_to_word"
+  result     String   // "correct" | "incorrect" | "skipped"
+  confidence Int      // 1–5
+  responseMs Int?     // response time in ms
+  reviewedAt DateTime @default(now())
+
+  word VocabularyWord @relation(fields: [wordId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([wordId])
+  @@index([userId, reviewedAt])
+  @@map("vocabulary_reviews")
+}
+
+// ── 13. AI query history ──────────────────────────────────────────────────────
+model AIQueryHistory {
+  id           String   @id @default(cuid())
+  userId       String   @default("saiful")
+  inputWord    String
+  language     String   // "en" | "bn"
+  response     Json
+  savedToVocab Boolean  @default(false)
+  queriedAt    DateTime @default(now())
+
+  @@index([userId])
+  @@map("ai_query_history")
 }

@@ -1,289 +1,211 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, CheckCircle2, Circle, Clock, RefreshCw } from 'lucide-react';
-import { chaptersAPI } from '../lib/api';
-import { LoadingCard } from '../components/ui/Shared';
-import { useUIStore } from '../store';
+import { useState, useEffect, useCallback } from 'react';
+import { BookOpen, CheckCircle, Clock, RotateCcw, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuthStore, useUIStore } from '../store';
+import { getChapters, updateChapter } from '../firebase/db';
+
+const SUBJECTS = ['Physics','Chemistry','Math','Botany','Zoology','English','Bangla','ICT'];
 
 const STATUS_CONFIG = {
-  not_started: { label: 'Not started', color: 'text-white/30',   bg: 'bg-white/[0.04]',   border: 'border-white/10',      icon: Circle       },
-  in_progress: { label: 'In progress', color: 'text-yellow-400', bg: 'bg-yellow-500/10',  border: 'border-yellow-500/20', icon: Clock        },
-  completed:   { label: 'Completed',   color: 'text-neon-green', bg: 'bg-neon-green/10',  border: 'border-neon-green/20', icon: CheckCircle2 },
-  revised:     { label: 'Revised',     color: 'text-neon-blue',  bg: 'bg-neon-blue/10',   border: 'border-neon-blue/20',  icon: RefreshCw    },
-};
-const STATUS_CYCLE = ['not_started', 'in_progress', 'completed', 'revised'];
-
-// ── Paper definitions — which chapter numbers belong to which paper ───────────
-const PAPER_MAP = {
-  Physics:    [
-    { paper: '1st Paper', range: [1, 10],  label: 'Physics 1st Paper'     },
-    { paper: '2nd Paper', range: [11, 21], label: 'Physics 2nd Paper'     },
-  ],
-  Chemistry:  [
-    { paper: '1st Paper', range: [1, 5],   label: 'Chemistry 1st Paper'   },
-    { paper: '2nd Paper', range: [6, 10],  label: 'Chemistry 2nd Paper'   },
-  ],
-  HigherMath: [
-    { paper: '1st Paper', range: [1, 10],  label: 'Higher Math 1st Paper' },
-    { paper: '2nd Paper', range: [11, 20], label: 'Higher Math 2nd Paper' },
-  ],
-  Botany:     [{ paper: '1st Paper', range: [1, 11], label: 'Botany' }],
-  Zoology:    [{ paper: '1st Paper', range: [1, 11], label: 'Zoology' }],
-  English1:   [{ paper: '1st Paper', range: [1, 17], label: 'English 1st Paper' }],
-  English2:   [{ paper: '2nd Paper', range: [1, 16], label: 'English 2nd Paper' }],
-  Bangla1:    [{ paper: '1st Paper', range: [1, 26], label: 'Bangla 1st Paper'  }],
-  Bangla2:    [{ paper: '2nd Paper', range: [1, 12], label: 'Bangla 2nd Paper'  }],
-  ICT:        [{ paper: '1st Paper', range: [1, 6],  label: 'ICT'              }],
+  not_started: { label: 'Not Started', color: 'text-slate-500 bg-slate-500/10 border-slate-500/20' },
+  in_progress: { label: 'In Progress', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
+  completed:   { label: 'Completed',   color: 'text-green-400  bg-green-500/10  border-green-500/20'  },
+  revised:     { label: 'Revised',     color: 'text-cyan-400   bg-cyan-500/10   border-cyan-500/20'   },
 };
 
-const SUBJECT_META = {
-  Physics:    { label: 'Physics',      emoji: '⚡', color: 'text-sky-400',     section: 'PCMB', buet: true  },
-  Chemistry:  { label: 'Chemistry',    emoji: '🧪', color: 'text-emerald-400', section: 'PCMB', buet: true  },
-  HigherMath: { label: 'Higher Math',  emoji: '📐', color: 'text-violet-400',  section: 'PCMB', buet: true  },
-  Botany:     { label: 'Botany',       emoji: '🌿', color: 'text-green-400',   section: 'PCMB', buet: false },
-  Zoology:    { label: 'Zoology',      emoji: '🦋', color: 'text-amber-400',   section: 'PCMB', buet: false },
-  English1:   { label: 'English 1st',  emoji: '📖', color: 'text-pink-400',    section: 'EBI',  buet: false },
-  English2:   { label: 'English 2nd',  emoji: '✍️', color: 'text-rose-400',    section: 'EBI',  buet: false },
-  Bangla1:    { label: 'Bangla 1st',   emoji: '📚', color: 'text-orange-400',  section: 'EBI',  buet: false },
-  Bangla2:    { label: 'Bangla 2nd',   emoji: '🖊️', color: 'text-yellow-400',  section: 'EBI',  buet: false },
-  ICT:        { label: 'ICT',          emoji: '💻', color: 'text-cyan-400',    section: 'EBI',  buet: false },
+const SUBJECT_ACCENT = {
+  Physics:   'from-cyan-500/10   to-blue-500/10   border-cyan-500/20',
+  Chemistry: 'from-purple-500/10 to-pink-500/10   border-purple-500/20',
+  Math:      'from-yellow-500/10 to-orange-500/10 border-yellow-500/20',
+  Botany:    'from-green-500/10  to-emerald-500/10 border-green-500/20',
+  Zoology:   'from-red-500/10    to-rose-500/10   border-red-500/20',
+  default:   'from-slate-500/10  to-slate-500/10  border-slate-500/20',
 };
 
-const PCMB_KEYS = ['Physics','Chemistry','HigherMath','Botany','Zoology'];
-const EBI_KEYS  = ['English1','English2','Bangla1','Bangla2','ICT'];
+function ChapterRow({ chapter, uid, onUpdated }) {
+  const toast    = useUIStore(s => s.toast);
+  const [saving, setSaving] = useState(false);
+  const status   = chapter.status || 'not_started';
+  const cfg      = STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
 
-export default function ChaptersPage() {
-  const [activeTab, setActiveTab]   = useState('PCMB');
-  const [expanded, setExpanded]     = useState({ Physics: true });
-  const [openPaper, setOpenPaper]   = useState({});
-  const toast = useUIStore(s => s.toast);
-  const qc    = useQueryClient();
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['chapters'],
-    queryFn:  () => chaptersAPI.getAll().then(r => r.data),
-  });
-
-  const mutation = useMutation({
-    mutationFn: ({ id, status }) => chaptersAPI.update(id, { status }),
-    onSuccess:  () => qc.invalidateQueries(['chapters']),
-    onError:    () => toast('আপডেট করা যায়নি', 'error'),
-  });
-
-  function cycleStatus(chapter) {
-    const idx  = STATUS_CYCLE.indexOf(chapter.status);
-    const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
-    mutation.mutate({ id: chapter.id, status: next });
-  }
-
-  function toggleSubject(subject) {
-    setExpanded(e => ({ ...e, [subject]: !e[subject] }));
-  }
-
-  function togglePaper(key) {
-    setOpenPaper(p => ({ ...p, [key]: !p[key] }));
-  }
-
-  if (isLoading) return <div className="space-y-3"><LoadingCard rows={3} /><LoadingCard rows={4} /></div>;
-
-  const summary = data?.summary || [];
-
-  function sectionStats(keys) {
-    const subjects = summary.filter(s => keys.includes(s.subject));
-    const total = subjects.reduce((a, s) => a + s.total, 0);
-    const done  = subjects.reduce((a, s) => a + s.completed + s.revised, 0);
-    return { total, done, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
-  }
-
-  const pcmbStats  = sectionStats(PCMB_KEYS);
-  const ebiStats   = sectionStats(EBI_KEYS);
-  const totalChaps = pcmbStats.total + ebiStats.total;
-  const totalDone  = pcmbStats.done  + ebiStats.done;
-  const overallPct = totalChaps > 0 ? Math.round((totalDone / totalChaps) * 100) : 0;
-
-  const activeKeys     = activeTab === 'PCMB' ? PCMB_KEYS : EBI_KEYS;
-  const activeSubjects = summary.filter(s => activeKeys.includes(s.subject));
+  const cycleStatus = async () => {
+    const order = ['not_started','in_progress','completed','revised'];
+    const next  = order[(order.indexOf(status) + 1) % order.length];
+    setSaving(true);
+    try {
+      await updateChapter(uid, chapter.subject, chapter.chapterNumber, { status: next });
+      onUpdated(chapter.id, { status: next });
+    } catch { toast('Failed to update', 'error'); }
+    finally { setSaving(false); }
+  };
 
   return (
-    <div className="space-y-5">
-
-      {/* ── Overall + section progress bars ──────────────────────────── */}
-      <div className="card p-5">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h2 className="text-sm font-bold text-white">সামগ্রিক অগ্রগতি</h2>
-            <p className="text-xs text-white/40 mt-0.5">{totalDone} / {totalChaps} chapter সম্পন্ন</p>
-          </div>
-          <span className="text-3xl font-bold text-gradient">{overallPct}%</span>
-        </div>
-        <div className="h-2 rounded-full bg-white/10 overflow-hidden mb-4">
-          <div className="h-full rounded-full bg-gradient-to-r from-neon-green to-neon-blue transition-all duration-700"
-            style={{ width: `${overallPct}%` }} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <MiniBar label="PCMB" emoji="🔬" done={pcmbStats.done} total={pcmbStats.total} pct={pcmbStats.pct} color="bg-sky-400" />
-          <MiniBar label="EBI"  emoji="📝" done={ebiStats.done}  total={ebiStats.total}  pct={ebiStats.pct}  color="bg-pink-400" />
-        </div>
-      </div>
-
-      {/* ── PCMB / EBI tab switcher ───────────────────────────────────── */}
-      <div className="flex gap-2">
-        {[
-          { key: 'PCMB', label: '🔬 PCMB', sub: 'Physics · Chemistry · Math · Biology',  activeCls: 'bg-sky-500/15 border-sky-500/30 text-sky-400'  },
-          { key: 'EBI',  label: '📝 EBI',  sub: 'English · Bangla · ICT',                activeCls: 'bg-pink-500/15 border-pink-500/30 text-pink-400' },
-        ].map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`flex-1 p-3 rounded-xl border text-left transition-all ${
-              activeTab === t.key ? t.activeCls : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
-            }`}
-          >
-            <div className="text-sm font-bold">{t.label}</div>
-            <div className="text-xs text-white/30 mt-0.5">{t.sub}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* ── Subject overview cards ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        {activeSubjects.map(({ subject, total, completed, revised, inProgress }) => {
-          const meta = SUBJECT_META[subject] || {};
-          const done = completed + revised;
-          const pct  = total > 0 ? Math.round((done / total) * 100) : 0;
-          const bar  = pct >= 80 ? 'bg-neon-green' : pct >= 50 ? 'bg-yellow-400' : 'bg-red-400';
-          return (
-            <button key={subject} onClick={() => toggleSubject(subject)}
-              className="card p-4 text-left hover:border-white/15 transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <span>{meta.emoji}</span>
-                <span className={`text-xs font-semibold truncate ${meta.color}`}>{meta.label}</span>
-                {meta.buet && <span className="ml-auto shrink-0 text-[10px] bg-red-500/15 text-red-400 border border-red-500/20 rounded px-1.5 py-0.5">BUET</span>}
-              </div>
-              <div className="text-xl font-bold text-white mb-1">
-                {done}<span className="text-sm text-white/30 font-normal">/{total}</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mb-1">
-                <div className={`h-full rounded-full transition-all duration-500 ${bar}`} style={{ width: `${pct}%` }} />
-              </div>
-              <p className="text-[11px] text-white/30">{inProgress > 0 ? `${inProgress}টা চলছে` : `${pct}% সম্পন্ন`}</p>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Subject accordion with paper sub-sections ────────────────── */}
-      {activeSubjects.map(({ subject, chapters }) => {
-        const meta     = SUBJECT_META[subject] || {};
-        const isOpen   = expanded[subject];
-        const papers   = PAPER_MAP[subject] || [];
-        const done     = chapters.filter(c => c.status === 'completed' || c.status === 'revised').length;
-
-        return (
-          <div key={subject} className="card overflow-hidden">
-
-            {/* Subject header */}
-            <button onClick={() => toggleSubject(subject)}
-              className="w-full flex items-center gap-3 p-4 hover:bg-white/[0.02] transition-colors"
-            >
-              <span className="text-lg">{meta.emoji}</span>
-              <div className="flex-1 text-left">
-                <span className={`text-sm font-bold ${meta.color}`}>{meta.label}</span>
-                {meta.buet && <span className="ml-2 text-[10px] bg-red-500/15 text-red-400 border border-red-500/20 rounded px-1.5 py-0.5">BUET Core</span>}
-                <span className="text-xs text-white/30 ml-2">{done}/{chapters.length} done</span>
-              </div>
-              {isOpen ? <ChevronDown size={16} className="text-white/30" /> : <ChevronRight size={16} className="text-white/30" />}
-            </button>
-
-            {/* Papers inside subject */}
-            {isOpen && (
-              <div className="border-t border-white/[0.06]">
-                {papers.map(({ paper, range, label }) => {
-                  const paperKey      = `${subject}-${paper}`;
-                  const isPaperOpen   = openPaper[paperKey] !== false; // default open
-                  const paperChapters = chapters.filter(c =>
-                    c.chapterNumber >= range[0] && c.chapterNumber <= range[1]
-                  );
-                  const paperDone = paperChapters.filter(c =>
-                    c.status === 'completed' || c.status === 'revised'
-                  ).length;
-                  const paperPct  = paperChapters.length > 0
-                    ? Math.round((paperDone / paperChapters.length) * 100) : 0;
-
-                  return (
-                    <div key={paperKey} className="border-b border-white/[0.04] last:border-0">
-
-                      {/* Paper sub-header */}
-                      <button
-                        onClick={() => togglePaper(paperKey)}
-                        className="w-full flex items-center gap-3 px-5 py-2.5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
-                      >
-                        <span className="text-xs font-semibold text-white/50">{label}</span>
-                        <span className="text-[11px] text-white/25 ml-1">({paperChapters.length} chapters)</span>
-                        {/* mini progress */}
-                        <div className="flex-1 mx-3 h-1 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              paperPct >= 80 ? 'bg-neon-green' : paperPct >= 50 ? 'bg-yellow-400' : 'bg-white/20'
-                            }`}
-                            style={{ width: `${paperPct}%` }}
-                          />
-                        </div>
-                        <span className="text-[11px] text-white/30 shrink-0">{paperDone}/{paperChapters.length}</span>
-                        {isPaperOpen
-                          ? <ChevronDown size={13} className="text-white/20 shrink-0" />
-                          : <ChevronRight size={13} className="text-white/20 shrink-0" />}
-                      </button>
-
-                      {/* Chapter rows */}
-                      {isPaperOpen && paperChapters.map(chapter => {
-                        const cfg  = STATUS_CONFIG[chapter.status];
-                        const Icon = cfg.icon;
-                        return (
-                          <div key={chapter.id}
-                            className="flex items-center gap-3 px-5 py-2.5 hover:bg-white/[0.02] transition-colors border-t border-white/[0.03]"
-                          >
-                            <span className="text-xs font-mono text-white/20 w-5 shrink-0">{chapter.chapterNumber}</span>
-                            <span className="flex-1 text-sm text-white/65 min-w-0 truncate" title={chapter.chapterName}>
-                              {chapter.chapterName}
-                            </span>
-                            <button
-                              onClick={() => cycleStatus(chapter)}
-                              disabled={mutation.isPending}
-                              className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-all hover:opacity-80 active:scale-95 ${cfg.bg} ${cfg.color} ${cfg.border}`}
-                            >
-                              <Icon size={11} />
-                              {cfg.label}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      <p className="text-xs text-white/20 text-center pb-4">
-        status badge এ ক্লিক করে cycle করো: Not started → In progress → Completed → Revised
-      </p>
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.03] transition-colors group">
+      <span className="text-xs text-slate-600 w-6 shrink-0">{chapter.chapterNumber}</span>
+      <span className="flex-1 text-sm text-slate-300 group-hover:text-white transition-colors truncate">
+        {chapter.chapterName}
+      </span>
+      <button
+        onClick={cycleStatus}
+        disabled={saving}
+        className={`text-[10px] px-2 py-1 rounded-lg border font-medium transition-all shrink-0 ${cfg.color} hover:brightness-125 disabled:opacity-50`}
+      >
+        {saving ? '…' : cfg.label}
+      </button>
     </div>
   );
 }
 
-function MiniBar({ label, emoji, done, total, pct, color }) {
+function SubjectSection({ subject, chapters, uid, onUpdated }) {
+  const [open, setOpen] = useState(true);
+  const accent = SUBJECT_ACCENT[subject] || SUBJECT_ACCENT.default;
+
+  const counts = chapters.reduce((acc, ch) => {
+    const s = ch.status || 'not_started';
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
+
+  const completed = (counts.completed || 0) + (counts.revised || 0);
+  const pct = chapters.length ? Math.round((completed / chapters.length) * 100) : 0;
+
   return (
-    <div className="bg-white/[0.03] rounded-lg p-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs font-semibold text-white/60">{emoji} {label}</span>
-        <span className="text-xs font-bold text-white">{pct}%</span>
+    <div className={`rounded-2xl border bg-gradient-to-br ${accent} overflow-hidden`}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+      >
+        {open ? <ChevronDown size={16} className="text-slate-500 shrink-0" /> : <ChevronRight size={16} className="text-slate-500 shrink-0" />}
+        <span className="font-semibold text-white flex-1">{subject}</span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-slate-400">{completed}/{chapters.length}</span>
+          <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 rounded-full" style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-slate-500 w-8">{pct}%</span>
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+            className="overflow-hidden border-t border-white/[0.06]"
+          >
+            <div className="px-2 py-2 space-y-0.5">
+              {chapters.map(ch => (
+                <ChapterRow key={ch.id} chapter={ch} uid={uid} onUpdated={onUpdated} />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function ChaptersPage() {
+  const user  = useAuthStore(s => s.user);
+  const [chapters, setChapters] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [search,   setSearch]   = useState('');
+  const [filter,   setFilter]   = useState('all');
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    getChapters(user.uid).then(ch => {
+      setChapters(ch);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [user?.uid]);
+
+  const handleUpdated = useCallback((id, data) => {
+    setChapters(prev => prev.map(ch => ch.id === id ? { ...ch, ...data } : ch));
+  }, []);
+
+  const filtered = chapters.filter(ch => {
+    const matchSearch = !search || ch.chapterName?.toLowerCase().includes(search.toLowerCase()) || ch.subject?.toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === 'all' || ch.status === filter || (!ch.status && filter === 'not_started');
+    return matchSearch && matchFilter;
+  });
+
+  const bySubject = SUBJECTS.reduce((acc, s) => {
+    const subChapters = filtered.filter(ch => ch.subject === s);
+    if (subChapters.length) acc[s] = subChapters;
+    return acc;
+  }, {});
+
+  const totalCompleted = chapters.filter(ch => ch.status === 'completed' || ch.status === 'revised').length;
+  const totalPct = chapters.length ? Math.round((totalCompleted / chapters.length) * 100) : 0;
+
+  return (
+    <div className="p-4 lg:p-6 max-w-3xl mx-auto space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <BookOpen size={20} className="text-cyan-400" /> Chapters
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">{totalCompleted}/{chapters.length} completed · {totalPct}% overall</p>
+        </div>
       </div>
-      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-700 ${color}`} style={{ width: `${pct}%` }} />
+
+      {/* Overall progress bar */}
+      <div className="rounded-xl bg-white/[0.02] border border-white/10 p-4">
+        <div className="flex justify-between text-xs mb-2">
+          <span className="text-slate-400">Overall Progress</span>
+          <span className="text-white font-medium">{totalPct}%</span>
+        </div>
+        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }} animate={{ width: `${totalPct}%` }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+            className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-purple-500"
+          />
+        </div>
       </div>
-      <p className="text-[11px] text-white/30 mt-1">{done}/{total} chapters</p>
+
+      {/* Search + Filter */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600" />
+          <input
+            type="text" placeholder="Search chapters…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-cyan-500/40"
+          />
+        </div>
+        <select value={filter} onChange={e => setFilter(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none"
+        >
+          <option value="all">All</option>
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="revised">Revised</option>
+        </select>
+      </div>
+
+      {/* Tip: click status to cycle */}
+      <p className="text-xs text-slate-600 -mt-2">💡 Click the status badge to cycle: Not Started → In Progress → Completed → Revised</p>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <div className="w-7 h-7 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : Object.keys(bySubject).length === 0 ? (
+        <div className="text-center py-12 text-slate-600">
+          <BookOpen size={40} className="mx-auto mb-3 opacity-30" />
+          <p>No chapters found.</p>
+          <p className="text-xs mt-1">Import chapters from the Routine page or contact admin to seed.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {Object.entries(bySubject).map(([subj, chs]) => (
+            <SubjectSection key={subj} subject={subj} chapters={chs} uid={user?.uid} onUpdated={handleUpdated} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

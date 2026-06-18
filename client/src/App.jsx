@@ -1,30 +1,94 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import AppLayout from './components/layout/AppLayout';
-import LoginPage from './pages/LoginPage';
-import DashboardPage from './pages/DashboardPage';
-import CheckinPage from './pages/CheckinPage';
-import TimerPage from './pages/TimerPage';
-import StatsPage from './pages/StatsPage';
-import ChaptersPage from './pages/ChaptersPage';
-import AIReportPage  from './pages/AIReportPage';
-import RevisionPage  from './pages/RevisionPage';
-import NotesPage     from './pages/NotesPage';
-import MistakePage   from './pages/MistakePage';
-import RoutinePage   from './pages/RoutinePage';
-import Toast from './components/ui/Toast';
+import { onAuthChange } from './firebase/auth';
+import { getUserProfile, findUserByEmail, createOrUpdateUser } from './firebase/db';
+import { getPartnerEmail, getDisplayName } from './lib/constants';
 
+import AppLayout       from './components/layout/AppLayout';
+import LoginPage       from './pages/LoginPage';
+import DashboardPage   from './features/dashboard/DashboardPage';
+import CheckinPage     from './pages/CheckinPage';
+import TimerPage       from './pages/TimerPage';
+import StatsPage       from './pages/StatsPage';
+import ChaptersPage    from './pages/ChaptersPage';
+import AIReportPage    from './pages/AIReportPage';
+import RevisionPage    from './pages/RevisionPage';
+import NotesPage       from './pages/NotesPage';
+import MistakePage     from './pages/MistakePage';
+import RoutinePage     from './pages/RoutinePage';
+import VocabularyPage  from './pages/VocabularyPage';
+import ChatPage        from './features/chat/ChatPage';
+import LeaderboardPage from './features/leaderboard/LeaderboardPage';
+import Toast           from './components/ui/Toast';
+
+// ── Auth guard ────────────────────────────────────────────────────────────────
 function PrivateRoute({ children }) {
-  const isAuthed = useAuthStore((s) => s.isAuthed);
+  const { isAuthed, isLoading } = useAuthStore();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#080b14] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <p className="text-slate-400 text-sm">Loading ZYNTRA…</p>
+        </div>
+      </div>
+    );
+  }
   return isAuthed ? children : <Navigate to="/login" replace />;
 }
 
+// ── Firebase auth listener ────────────────────────────────────────────────────
+function AuthInitializer() {
+  const { setUser, setPartner, setLoading } = useAuthStore();
+
+  useEffect(() => {
+    const unsub = onAuthChange(async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        return;
+      }
+      try {
+        // Ensure user doc exists in Firestore
+        const displayName = getDisplayName(firebaseUser.email);
+        await createOrUpdateUser(firebaseUser.uid, {
+          email:       firebaseUser.email,
+          displayName: displayName,
+          uid:         firebaseUser.uid,
+        });
+
+        // Load partner
+        const partnerEmail = getPartnerEmail(firebaseUser.email);
+        if (partnerEmail) {
+          const partner = await findUserByEmail(partnerEmail);
+          setPartner(partner);
+        }
+
+        setUser({
+          uid:         firebaseUser.uid,
+          email:       firebaseUser.email,
+          displayName: displayName,
+        });
+      } catch (err) {
+        console.error('[Auth] init error:', err);
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email, displayName: getDisplayName(firebaseUser.email) });
+      }
+    });
+    return unsub;
+  }, []);
+
+  return null;
+}
+
+// ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthInitializer />
       <Toast />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+
         <Route
           path="/"
           element={
@@ -33,17 +97,21 @@ export default function App() {
             </PrivateRoute>
           }
         >
-          <Route index                element={<DashboardPage />} />
-          <Route path="checkin"       element={<CheckinPage />} />
-          <Route path="timer"         element={<TimerPage />} />
-          <Route path="stats"         element={<StatsPage />} />
-          <Route path="chapters"      element={<ChaptersPage />} />
-          <Route path="ai"            element={<AIReportPage />} />
-          <Route path="revision"      element={<RevisionPage />} />
-          <Route path="notes"         element={<NotesPage />} />
-          <Route path="mistakes"      element={<MistakePage />} />
-          <Route path="routine"       element={<RoutinePage />} />
+          <Route index                  element={<DashboardPage />}   />
+          <Route path="checkin"         element={<CheckinPage />}     />
+          <Route path="timer"           element={<TimerPage />}       />
+          <Route path="stats"           element={<StatsPage />}       />
+          <Route path="chapters"        element={<ChaptersPage />}    />
+          <Route path="ai"              element={<AIReportPage />}    />
+          <Route path="revision"        element={<RevisionPage />}    />
+          <Route path="notes"           element={<NotesPage />}       />
+          <Route path="mistakes"        element={<MistakePage />}     />
+          <Route path="routine"         element={<RoutinePage />}     />
+          <Route path="vocabulary"      element={<VocabularyPage />}  />
+          <Route path="chat"            element={<ChatPage />}        />
+          <Route path="leaderboard"     element={<LeaderboardPage />} />
         </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
