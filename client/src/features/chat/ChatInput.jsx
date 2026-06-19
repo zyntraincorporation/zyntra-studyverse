@@ -23,7 +23,7 @@ function truncate(str, n = 60) {
   return str.length > n ? str.slice(0, n) + '…' : str;
 }
 
-export default function ChatInput({ isLocked, replyTo, onCancelReply }) {
+export default function ChatInput({ isLocked, replyTo, onCancelReply, onMessageSent }) {
   const user = useAuthStore(s => s.user);
   const isMobile = useIsMobile();
   const [text, setText] = useState('');
@@ -47,12 +47,14 @@ export default function ChatInput({ isLocked, replyTo, onCancelReply }) {
       await sendMessage(user.uid, trimmed, null, null, replyPayload);
       setText('');
       onCancelReply?.();
+      // Notify parent (triggers push to partner)
+      onMessageSent?.(trimmed);
     } catch (err) {
       console.error('Send failed:', err);
     } finally {
       setSending(false);
     }
-  }, [text, isLocked, user?.uid, replyTo, onCancelReply]);
+  }, [text, isLocked, user?.uid, replyTo, onCancelReply, onMessageSent]);
 
   const handleKey = (e) => {
     if (e.key === 'Enter') {

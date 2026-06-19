@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../../store';
-import { subscribeToDailyLeaderboard, getSessionsByDateRange } from '../../firebase/db';
+import { subscribeToDailyLeaderboard, getSessionsByDateRange, getVocabStats } from '../../firebase/db';
 import { getBSTDateString, getDateRange, formatDuration } from '../../lib/bst';
 
 const SUBJECTS_COLOR = {
@@ -61,18 +61,33 @@ function UserCard({ uid, data, rank, isMe }) {
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white text-base">{data?.displayName || 'User'}</span>
-            {isMe && <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded-full">You</span>}
+            <span className="font-bold text-white text-sm min-[375px]:text-base truncate">{data?.displayName || data?.name || 'User'}</span>
+            {isMe && <span className="text-[10px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded-full whitespace-nowrap">You</span>}
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Study time</p>
-              <p className="text-sm font-semibold text-white">{formatDuration(minutes)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Sessions</p>
-              <p className="text-sm font-semibold text-white">{sessions}</p>
-            </div>
+          <div className="grid grid-cols-2 gap-x-2 min-[375px]:gap-x-4 gap-y-1 mt-2">
+            {data?.vocabMode ? (
+              <>
+                <div>
+                  <p className="text-[9px] min-[375px]:text-[10px] text-slate-500 uppercase tracking-wide truncate">Words Learned</p>
+                  <p className="text-xs min-[375px]:text-sm font-semibold text-white">{data.totalWords || 0}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] min-[375px]:text-[10px] text-slate-500 uppercase tracking-wide truncate">Mastered</p>
+                  <p className="text-xs min-[375px]:text-sm font-semibold text-white">{data.masteredWords || 0}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <p className="text-[9px] min-[375px]:text-[10px] text-slate-500 uppercase tracking-wide truncate">Study time</p>
+                  <p className="text-xs min-[375px]:text-sm font-semibold text-white">{formatDuration(minutes)}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] min-[375px]:text-[10px] text-slate-500 uppercase tracking-wide truncate">Sessions</p>
+                  <p className="text-xs min-[375px]:text-sm font-semibold text-white">{sessions}</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -86,6 +101,7 @@ export default function LeaderboardPage() {
   const [tab,       setTab]       = useState('today');
   const [todayData, setTodayData] = useState({});
   const [weekData,  setWeekData]  = useState({});
+  const [vocabData, setVocabData] = useState({});
   const [loading,   setLoading]   = useState(true);
 
   // Today — real-time
@@ -126,7 +142,38 @@ export default function LeaderboardPage() {
     });
   }, [tab, user?.uid, partner?.uid]);
 
-  const data    = tab === 'today' ? todayData : weekData;
+  // Vocab — compute from vocab stats
+  useEffect(() => {
+    if (tab !== 'vocab' || !user?.uid) return;
+    const uids = [user.uid, partner?.uid].filter(Boolean);
+
+    Promise.all(uids.map(uid =>
+      getVocabStats(uid).then(stats => ({
+        uid,
+        name: uid === user.uid ? user.displayName : partner?.displayName,
+        totalWords: stats.totalWords || 0,
+        masteredWords: stats.masteredWords || 0,
+        score: Math.min(100, (stats.totalWords || 0) + (stats.masteredWords || 0) * 5),
+        vocabMode: true,
+      })).catch(err => {
+        console.error('Error fetching vocab stats for user:', uid, err);
+        return {
+          uid,
+          name: uid === user.uid ? user.displayName : partner?.displayName,
+          totalWords: 0,
+          masteredWords: 0,
+          score: 0,
+          vocabMode: true,
+        };
+      })
+    )).then(results => {
+      const obj = {};
+      results.forEach(r => obj[r.uid] = r);
+      setVocabData(obj);
+    });
+  }, [tab, user?.uid, partner?.uid]);
+
+  const data    = tab === 'today' ? todayData : tab === 'week' ? weekData : vocabData;
   const entries = Object.entries(data)
     .filter(([k]) => k !== 'updatedAt')
     .sort(([, a], [, b]) => (b.score || 0) - (a.score || 0));
@@ -150,25 +197,31 @@ export default function LeaderboardPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-white/[0.03] border border-white/10 rounded-xl p-1 mb-6">
-          {['today', 'week'].map(t => (
+        <div className="flex bg-white/[0.03] border border-white/10 rounded-xl p-1 mb-6 overflow-x-auto scrollbar-none">
+          {['today', 'week', 'vocab'].map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`flex-1 min-w-[90px] py-2 rounded-lg text-xs min-[375px]:text-sm font-medium transition-all ${
                 tab === t
                   ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-white shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              {t === 'today' ? 'Today' : 'This Week'}
+              {t === 'today' ? 'Today' : t === 'week' ? 'This Week' : 'Vocabulary'}
             </button>
           ))}
         </div>
 
         <div className="mb-4 px-4 py-2 bg-white/[0.02] border border-white/[0.06] rounded-xl text-center">
-          <p className="text-[11px] text-slate-500">Score = study minutes × 2 + sessions × 10</p>
-          <p className="text-[10px] text-slate-600 mt-0.5">⚠️ Custom study sessions are not counted</p>
+          <p className="text-[11px] text-slate-500">
+            {tab === 'vocab' 
+              ? 'Score = Total Words + Mastered × 5'
+              : 'Score = study minutes × 2 + sessions × 10'}
+          </p>
+          {tab !== 'vocab' && (
+            <p className="text-[10px] text-slate-600 mt-0.5">⚠️ Custom study sessions are not counted</p>
+          )}
         </div>
 
         {/* Cards */}

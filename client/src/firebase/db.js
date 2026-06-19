@@ -593,6 +593,141 @@ export function subscribeToPartnerPresence(partnerId, callback) {
   });
 }
 
+export function subscribeToMessages(callback, limitCount = 60) {
+  const q = query(
+    collection(db, 'chat', chatRoomId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    limit(limitCount)
+  );
+  return onSnapshot(q, { includeMetadataChanges: false }, snap => {
+    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(msgs);
+  });
+}
+
+// Paginate — fetch older messages before a given cursor doc snapshot
+export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
+  const cursorRef = doc(db, 'chat', chatRoomId, 'messages', oldestDocId);
+  const cursorSnap = await getDoc(cursorRef);
+  if (!cursorSnap.exists()) return [];
+  const { endBefore, limitToLast } = await import('firebase/firestore');
+  const q2 = query(
+    collection(db, 'chat', chatRoomId, 'messages'),
+    orderBy('createdAt', 'asc'),
+    endBefore(cursorSnap),
+    limitToLast(limitCount)
+  );
+  const snap = await getDocs(q2);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// replyTo: { id, text, senderName } — optional, stored only when replying
+export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
+  const expiresAt = new Date(Date.now() + messageTTLMs);
+  await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
+    senderId, text: text || null, mediaUrl, mediaType,
+    ...(replyTo ? { replyTo } : {}),
+    createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
+  });
+}
+
+// ── Unread Count ──────────────────────────────────────────────────────────────
+
+export async function updateLastRead(userId) {
+  try {
+    await setDoc(
+      doc(db, 'users', userId),
+      { chatLastReadAt: now() },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error('[chat] updateLastRead failed:', err);
+  }
+}
+
+export function subscribeToUnreadCount(userId, callback) {
+  // Subscribe to user doc to get lastReadAt, then count messages after it
+  const userUnsub = onSnapshot(doc(db, 'users', userId), async (snap) => {
+    if (!snap.exists()) { callback(0); return; }
+    const lastReadAt = snap.data().chatLastReadAt;
+    if (!lastReadAt) {
+      // Never read — count recent messages not from this user
+      const q = query(
+        collection(db, 'chat', chatRoomId, 'messages'),
+        where('senderId', '!=', userId),
+        orderBy('senderId'),
+        orderBy('createdAt', 'desc'),
+        limit(99)
+      );
+      try {
+        const s = await getDocs(q);
+        callback(s.size);
+      } catch { callback(0); }
+      return;
+    }
+    // Count messages after lastReadAt that aren't from this user
+    const q = query(
+      collection(db, 'chat', chatRoomId, 'messages'),
+      where('senderId', '!=', userId),
+      where('createdAt', '>', lastReadAt),
+      orderBy('senderId'),
+      orderBy('createdAt', 'asc'),
+      limit(99)
+    );
+    try {
+      const s = await getDocs(q);
+      callback(s.size);
+    } catch (err) {
+      // Fallback if composite index not ready
+      console.warn('[chat] unread count query failed, using 0:', err);
+      callback(0);
+    }
+  });
+  return userUnsub;
+}
+
+// ── Real-time user stats (fixes partner study progress sync) ──────────────────
+
+export function subscribeToUserStats(uid, callback) {
+  return onSnapshot(doc(db, 'users', uid), snap => {
+    callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+  });
+}
+
+// ── Push Notification Sender (calls Netlify function) ─────────────────────────
+
+export async function sendPushNotification(toUid, { title, body, type = 'default', data = {} }) {
+  try {
+    // Get recipient's FCM token from Firestore
+    const userSnap = await getDoc(doc(db, 'users', toUid));
+    if (!userSnap.exists()) return;
+    const fcmToken = userSnap.data()?.fcmToken;
+    if (!fcmToken) return; // User hasn't granted push permission
+
+    const pushUrl = import.meta.env.VITE_PUSH_FUNCTION_URL || '/.netlify/functions/send-push';
+    const res = await fetch(pushUrl, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: fcmToken,
+        title,
+        body,
+        data: { type, ...data },
+      }),
+    });
+
+    const result = await res.json();
+
+    // If token is invalid, clear it from Firestore
+    if (result.reason === 'invalid_token') {
+      await updateDoc(doc(db, 'users', toUid), { fcmToken: null });
+    }
+  } catch (err) {
+    // Non-fatal — push is best-effort
+    console.warn('[push] Failed to send notification:', err);
+  }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LEADERBOARD
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -619,6 +754,13 @@ export async function recalculateAndSaveLeaderboard(userId, displayName) {
     displayName, studyMinutes: minutes, sessionsCompleted: completed,
     score, updatedAt: new Date().toISOString(),
   });
+  
+  // Also sync todayStudyMinutes to the user doc for real-time presence/stats sync
+  await setDoc(ref('users', userId), { 
+    todayStudyMinutes: minutes,
+    updatedAt: new Date().toISOString()
+  }, { merge: true });
+
   return { minutes, completed, score };
 }
 

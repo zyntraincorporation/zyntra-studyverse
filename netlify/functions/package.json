@@ -1,0 +1,9 @@
+{
+  "name": "zyntra-push-functions",
+  "version": "1.0.0",
+  "description": "Netlify serverless functions for ZYNTRA StudyVerse",
+  "type": "commonjs",
+  "dependencies": {
+    "google-auth-library": "^9.0.0"
+  }
+}

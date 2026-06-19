@@ -6,11 +6,23 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Netlify Functions directory (one level up from client)
+[functions]
+  directory = "../netlify/functions"
+  node_bundler = "esbuild"
+
 # SPA redirect — all routes go to index.html
 [[redirects]]
   from   = "/*"
   to     = "/index.html"
   status = 200
+
+# Service worker must be served at root with broad scope header
+[[headers]]
+  for = "/firebase-messaging-sw.js"
+  [headers.values]
+    Service-Worker-Allowed = "/"
+    Cache-Control          = "no-cache, no-store, must-revalidate"
 
 # Cache static assets aggressively
 [[headers]]

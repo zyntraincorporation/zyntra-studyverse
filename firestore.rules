@@ -30,7 +30,7 @@ service cloud.firestore {
 
     // ── Sessions ──────────────────────────────────────────────────────────────
     match /sessions/{docId} {
-      allow read:   if isAuthed() && resource.data.userId == uid();
+      allow read:   if isCoupleUser();
       allow create: if isAuthed() && request.resource.data.userId == uid();
       allow update, delete: if isAuthed() && resource.data.userId == uid();
     }
@@ -74,10 +74,12 @@ service cloud.firestore {
 
     // ── Vocabulary (subcollection per user) ───────────────────────────────────
     match /vocabulary/{userId}/words/{wordId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isCoupleUser();
+      allow write: if isOwner(userId);
     }
     match /vocabulary/{userId}/reviews/{reviewId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isCoupleUser();
+      allow write: if isOwner(userId);
     }
 
     // ── AI Reports (private) ──────────────────────────────────────────────────

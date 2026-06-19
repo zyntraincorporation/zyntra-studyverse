@@ -2,8 +2,10 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
 import { onAuthChange } from './firebase/auth';
-import { getUserProfile, findUserByEmail, createOrUpdateUser } from './firebase/db';
+import { findUserByEmail, createOrUpdateUser } from './firebase/db';
 import { getPartnerEmail, getDisplayName } from './lib/constants';
+import { onForegroundMessage } from './firebase/messaging';
+
 
 import AppLayout       from './components/layout/AppLayout';
 import LoginPage       from './pages/LoginPage';
@@ -80,11 +82,39 @@ function AuthInitializer() {
   return null;
 }
 
+// ── FCM Foreground Message Handler ───────────────────────────────────────────
+function FCMForegroundListener() {
+  const user = useAuthStore(s => s.user);
+
+  useEffect(() => {
+    // Listen for FCM messages when app is in foreground
+    const unsubFCM = onForegroundMessage((payload) => {
+      const { title, body } = payload.notification || {};
+      const data = payload.data || {};
+      // Show via browser Notification API if permission granted
+      if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+          new Notification(title || 'ZYNTRA StudyVerse', {
+            body:  body || '',
+            icon:  '/android-chrome-192x192.png',
+            badge: '/favicon-32x32.png',
+            tag:   data.type || 'zyntra',
+          });
+        } catch (_) {}
+      }
+    });
+    return unsubFCM;
+  }, [user?.uid]); // eslint-disable-line
+
+  return null;
+}
+
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <BrowserRouter>
       <AuthInitializer />
+      <FCMForegroundListener />
       <Toast />
       <Routes>
         <Route path="/login" element={<LoginPage />} />

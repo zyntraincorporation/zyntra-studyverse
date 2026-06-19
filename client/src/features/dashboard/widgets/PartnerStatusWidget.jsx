@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../../store';
-import { subscribeToPartnerPresence } from '../../../firebase/db';
+import { usePartnerStats } from '../../../hooks/usePartnerStats';
 
 function elapsed(startedAt) {
   if (!startedAt) return '';
@@ -12,14 +12,8 @@ function elapsed(startedAt) {
 
 export default function PartnerStatusWidget() {
   const partner = useAuthStore(s => s.partner);
-  const [presence, setPresence] = useState(null);
-  const [tick,     setTick]     = useState(0);
-
-  useEffect(() => {
-    if (!partner?.uid) return;
-    const unsub = subscribeToPartnerPresence(partner.uid, setPresence);
-    return unsub;
-  }, [partner?.uid]);
+  const partnerStats = usePartnerStats();
+  const [tick, setTick] = useState(0);
 
   // Refresh duration every minute
   useEffect(() => {
@@ -27,7 +21,7 @@ export default function PartnerStatusWidget() {
     return () => clearInterval(id);
   }, []);
 
-  const isStudying = presence?.isStudying;
+  const isStudying = partnerStats?.isStudying;
 
   return (
     <div className={`h-full rounded-2xl border p-4 flex flex-col transition-all duration-500 ${
@@ -44,20 +38,22 @@ export default function PartnerStatusWidget() {
         <div className="flex-1 flex items-center justify-center text-slate-600 text-sm">No partner linked</div>
       ) : isStudying ? (
         <div className="flex-1 flex flex-col justify-center gap-2">
-          <p className="text-lg font-bold text-white">💜 {partner.displayName}</p>
-          <p className="text-sm text-purple-300">Studying <span className="font-semibold">{presence.subject}</span></p>
-          {presence.chapter && <p className="text-xs text-slate-500">{presence.chapter}</p>}
-          <span className="text-xs font-mono text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full self-start">
-            {elapsed(presence.startedAt)} elapsed
-          </span>
+          <p className="text-lg font-bold text-white">💜 {partnerStats.displayName}</p>
+          <p className="text-sm text-purple-300">Studying <span className="font-semibold">{partnerStats.subject}</span></p>
+          {partnerStats.chapter && <p className="text-xs text-slate-500">{partnerStats.chapter}</p>}
+          {partnerStats.startedAt && (
+            <span className="text-xs font-mono text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full self-start">
+              {elapsed(partnerStats.startedAt)} elapsed
+            </span>
+          )}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-slate-600">
           <span className="text-3xl">😴</span>
-          <p className="text-sm text-center">Waiting for {partner.displayName}…</p>
-          {presence?.studyMinutesToday > 0 && (
+          <p className="text-sm text-center">Waiting for {partnerStats.displayName}…</p>
+          {partnerStats?.studyMinutesToday > 0 && (
             <p className="text-xs text-slate-600">
-              {Math.floor(presence.studyMinutesToday / 60)}h {presence.studyMinutesToday % 60}m studied today
+              {Math.floor(partnerStats.studyMinutesToday / 60)}h {partnerStats.studyMinutesToday % 60}m studied today
             </p>
           )}
         </div>

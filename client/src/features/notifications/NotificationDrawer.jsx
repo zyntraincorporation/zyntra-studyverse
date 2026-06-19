@@ -1,9 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, CheckCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { markNotificationRead, markAllNotificationsRead } from '../../firebase/db';
+
 
 const TYPE_ICON = {
   partner_studying:  '💪',
+  chat_message:      '💬',
   chat_unlocked:     '💬',
   chat_locked:       '🔒',
   streak:            '🔥',
@@ -12,6 +15,15 @@ const TYPE_ICON = {
   study_reminder:    '⏰',
   default:           '🔔',
 };
+
+const TYPE_ROUTE = {
+  chat_message:  '/chat',
+  chat_unlocked: '/chat',
+  leaderboard:   '/leaderboard',
+  vocab_milestone: '/vocabulary',
+  streak:        '/',
+};
+
 
 function timeAgo(ts) {
   if (!ts) return '';
@@ -24,9 +36,17 @@ function timeAgo(ts) {
 }
 
 export default function NotificationDrawer({ open, onClose, notifications, userId }) {
-  const handleRead = async (id) => {
+  const navigate = useNavigate();
+
+  const handleRead = async (n) => {
     if (!userId) return;
-    await markNotificationRead(userId, id).catch(() => {});
+    await markNotificationRead(userId, n.id).catch(() => {});
+    // Navigate to relevant page
+    const route = TYPE_ROUTE[n.type];
+    if (route) {
+      onClose();
+      navigate(route);
+    }
   };
 
   const handleReadAll = async () => {
@@ -82,7 +102,7 @@ export default function NotificationDrawer({ open, onClose, notifications, userI
               {notifications.map(n => (
                 <button
                   key={n.id}
-                  onClick={() => handleRead(n.id)}
+                  onClick={() => handleRead(n)}
                   className={`w-full text-left px-5 py-3.5 flex items-start gap-3 transition-colors hover:bg-white/[0.03]
                     ${!n.read ? 'bg-cyan-500/[0.03]' : ''}`}
                 >

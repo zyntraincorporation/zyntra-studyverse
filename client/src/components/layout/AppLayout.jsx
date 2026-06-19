@@ -8,9 +8,12 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useTimerStore } from '../../store';
 import { logout as firebaseLogout } from '../../firebase/auth';
-import { subscribeToPartnerPresence } from '../../firebase/db';
+import { subscribeToUnreadCount } from '../../firebase/db';
+import { usePartnerStats } from '../../hooks/usePartnerStats';
+import { useHeartbeat } from '../../hooks/useHeartbeat';
 import { getBSTDayName, getBSTTime } from '../../lib/bst';
 import NotificationCenter from '../../features/notifications/NotificationCenter';
+import { requestPushPermission } from '../../firebase/messaging';
 
 function formatElapsed(s) {
   const h = Math.floor(s / 3600);
@@ -35,37 +38,61 @@ const NAV = [
 ];
 
 const COUPLE_NAV = [
-  { to: '/leaderboard', icon: Trophy,         label: 'Leaderboard', highlight: 'gold'   },
-  { to: '/chat',        icon: MessageCircle,  label: 'Chat',        highlight: 'cyan'   },
+  { to: '/leaderboard', icon: Trophy,         label: 'Leaderboard', highlight: 'gold' },
+  { to: '/chat',        icon: MessageCircle,  label: 'Chat',        highlight: 'cyan' },
 ];
 
 export default function AppLayout() {
-  const [sidebarOpen,    setSidebarOpen]    = useState(false);
-  const [partnerStudying, setPartnerStudying] = useState(false);
-  const [partnerSubject,  setPartnerSubject]  = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [chatUnread,  setChatUnread]  = useState(0);
 
-  const user     = useAuthStore((s) => s.user);
-  const partner  = useAuthStore((s) => s.partner);
+  const user     = useAuthStore(s => s.user);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const isRunning = useTimerStore((s) => s.isRunning);
-  const elapsed   = useTimerStore((s) => s.elapsed);
-  const subject   = useTimerStore((s) => s.subject);
+  const isRunning = useTimerStore(s => s.isRunning);
+  const elapsed   = useTimerStore(s => s.elapsed);
+  const subject   = useTimerStore(s => s.subject);
 
   const day  = getBSTDayName();
   const { hour } = getBSTTime();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
-  // Subscribe to partner's real-time presence and rehydrate timer
+  // Unified partner stats (presence + user doc, deduplicated)
+  const partnerStats = usePartnerStats();
+
+  // Heartbeat to ping presence.lastSeen while active
+  useHeartbeat();
+
+  // Rehydrate timer on mount
   useEffect(() => {
     useTimerStore.getState().rehydrate();
-    if (!partner?.uid) return;
-    const unsub = subscribeToPartnerPresence(partner.uid, (presence) => {
-      setPartnerStudying(presence?.isStudying || false);
-      setPartnerSubject(presence?.subject || '');
+  }, []);
+
+  // Unread chat message count
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToUnreadCount(user.uid, count => {
+      setChatUnread(count);
     });
     return unsub;
-  }, [partner?.uid]);
+  }, [user?.uid]);
+
+  // Clear unread badge when user navigates to /chat
+  useEffect(() => {
+    if (location.pathname === '/chat') {
+      setChatUnread(0);
+    }
+  }, [location.pathname]);
+
+  // Request push permission after first load (silent — no banner here)
+  useEffect(() => {
+    if (!user?.uid) return;
+    if ('Notification' in window && Notification.permission === 'default') {
+      // Silently attempt — won't show prompt, just set up if already granted
+      requestPushPermission(user.uid).catch(() => {});
+    }
+  }, [user?.uid]);
 
   const handleLogout = async () => {
     try {
@@ -88,7 +115,7 @@ export default function AppLayout() {
         )}
       </AnimatePresence>
 
-      {/* ── Sidebar ────────────────────────────────────────────────────── */}
+      {/* ── Sidebar ────────────────────────────────────────────── */}
       <aside className={`
         fixed inset-y-0 left-0 z-30 w-64 flex flex-col
         bg-[#0c1220] border-r border-white/[0.06]
@@ -116,14 +143,14 @@ export default function AppLayout() {
           <div className="text-sm font-semibold text-white mt-0.5">{user?.displayName || 'User'} 👋</div>
           <div className="text-[11px] text-white/30 mt-0.5">{day} · BUET Prep 2027</div>
 
-          {/* Partner status */}
-          {partner && (
+          {/* Partner status (from unified hook) */}
+          {partnerStats.uid && (
             <div className="flex items-center gap-1.5 mt-2">
-              <div className={`w-1.5 h-1.5 rounded-full ${partnerStudying ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
+              <div className={`w-1.5 h-1.5 rounded-full ${partnerStats.isStudying ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
               <span className="text-[10px] text-slate-500">
-                {partnerStudying
-                  ? `${partner.displayName} studying ${partnerSubject}`
-                  : `${partner.displayName} offline`
+                {partnerStats.isStudying
+                  ? `${partnerStats.displayName} studying ${partnerStats.subject}`
+                  : `${partnerStats.displayName} offline`
                 }
               </span>
             </div>
@@ -175,8 +202,28 @@ export default function AppLayout() {
             >
               <Icon size={16} />
               {label}
-              {to === '/chat' && (
-                <span className={`ml-auto w-1.5 h-1.5 rounded-full ${partnerStudying ? 'bg-green-400' : 'bg-slate-700'}`} />
+
+              {/* Chat unread badge */}
+              {to === '/chat' && chatUnread > 0 && (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="ml-auto min-w-[18px] h-[18px] rounded-full bg-gradient-to-br from-cyan-500 to-purple-600
+                             text-[9px] font-bold text-white flex items-center justify-center px-1
+                             shadow-[0_0_8px_rgba(6,182,212,0.5)]"
+                >
+                  {chatUnread > 9 ? '9+' : chatUnread}
+                </motion.span>
+              )}
+
+              {/* Partner studying dot (when no unread) */}
+              {to === '/chat' && chatUnread === 0 && (
+                <span className={`ml-auto w-1.5 h-1.5 rounded-full ${partnerStats.isStudying ? 'bg-green-400 animate-pulse' : 'bg-slate-700'}`} />
+              )}
+
+              {/* Leaderboard dot */}
+              {to === '/leaderboard' && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-yellow-500/60" />
               )}
             </NavLink>
           ))}
