@@ -81,7 +81,6 @@ export default function ChatPage() {
     }
   }, [user, partner?.uid]);
 
-  }, [user, partner?.uid]);
 
   // Compute precise online status (active within last 2 mins)
   const isOnline = partnerStats?.lastSeen
