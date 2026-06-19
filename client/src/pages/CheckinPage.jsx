@@ -5,9 +5,9 @@ import { useAuthStore, useUIStore } from '../store';
 import {
   getTodaySessions, saveSession, getTodayStudyMinutes,
   recalculateAndSaveLeaderboard, updateChatStudyMinutes,
-  deleteSession,
   createScheduleEntry, getScheduleEntries,
   updateScheduleEntry, deleteScheduleEntry,
+  updatePresence,
 } from '../firebase/db';
 import {
   getBSTDateString, getBSTDayName, formatDuration, WEEKLY_SCHEDULE, SESSION_SLOTS,
@@ -302,14 +302,15 @@ function ScheduleEntryForm({ uid, today, onSaved, onCancel, editing = null }) {
   const [chapter, setChapter] = useState(editing?.chapter || '');
   const [date,    setDate]    = useState(editing?.date    || today);
   const [time,    setTime]    = useState(editing?.time    || '08:00');
+  const [endTime, setEndTime] = useState(editing?.endTime || '10:00');
   const [notes,   setNotes]   = useState(editing?.notes   || '');
   const [saving,  setSaving]  = useState(false);
 
   const handleSave = async () => {
-    if (!subject || !date || !time) { toast('Subject, date and time are required', 'error'); return; }
+    if (!subject || !date || !time || !endTime) { toast('Subject, date and times are required', 'error'); return; }
     setSaving(true);
     try {
-      const data = { subject, chapter, date, time, notes };
+      const data = { subject, chapter, date, time, endTime, notes };
       if (editing) {
         await updateScheduleEntry(uid, editing.id, data);
         toast('Schedule updated ✓', 'success');
@@ -336,10 +337,12 @@ function ScheduleEntryForm({ uid, today, onSaved, onCancel, editing = null }) {
       <input type="text" placeholder="অধ্যায় (ঐচ্ছিক)…" value={chapter}
         onChange={e => setChapter(e.target.value)}
         className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none bangla" />
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <input type="date" value={date} onChange={e => setDate(e.target.value)}
           className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none" />
         <input type="time" value={time} onChange={e => setTime(e.target.value)}
+          className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none" />
+        <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
           className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none" />
       </div>
       <textarea rows={1} placeholder="নোট (ঐচ্ছিক)…" value={notes} onChange={e => setNotes(e.target.value)}
@@ -363,7 +366,55 @@ function ScheduleEntryCard({ entry, uid, onUpdated, onDeleted }) {
   const [editing, setEditing]         = useState(false);
   const [delArmed, setDelArmed]       = useState(false);
   const [saving,  setSaving]          = useState(false);
+  const [tick, setTick] = useState(0);
   const delTimer = useRef(null);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60000); // update every minute
+    return () => clearInterval(id);
+  }, []);
+
+  const getCountdown = () => {
+    if (entry.status !== 'pending') return null;
+    
+    // Check if it's today
+    const { getBSTDateString, getBSTTime } = require('../../lib/bst');
+    const today = getBSTDateString();
+    if (entry.date !== today) return null;
+
+    const { hour, minute } = getBSTTime();
+    const currentMins = hour * 60 + minute;
+    
+    const startMins = (() => {
+      const [h, m] = entry.time.split(':').map(Number);
+      return h * 60 + m;
+    })();
+
+    const endMins = (() => {
+      if (!entry.endTime) {
+        const [h, m] = entry.time.split(':').map(Number);
+        return ((h + 2) % 24) * 60 + m; // 2 hour default
+      }
+      const [h, m] = entry.endTime.split(':').map(Number);
+      return h * 60 + m;
+    })();
+
+    if (currentMins >= startMins && currentMins <= endMins) {
+      const remaining = endMins - currentMins;
+      const rH = Math.floor(remaining / 60);
+      const rM = remaining % 60;
+      return { live: true, text: `Ends in: ${rH ? rH + 'h ' : ''}${rM}m` };
+    }
+    
+    if (currentMins < startMins) {
+      const remaining = startMins - currentMins;
+      const rH = Math.floor(remaining / 60);
+      const rM = remaining % 60;
+      return { live: false, text: `Starts in: ${rH ? rH + 'h ' : ''}${rM}m` };
+    }
+
+    return null;
+  };
 
   const STATUS_STYLES = {
     pending:   'bg-slate-500/10 text-slate-400 border-slate-500/20',
@@ -379,6 +430,23 @@ function ScheduleEntryCard({ entry, uid, onUpdated, onDeleted }) {
       toast(status === 'completed' ? 'সম্পূর্ণ ✅' : 'বাদ পড়েছে ❌', status === 'completed' ? 'success' : 'info');
     } catch { toast('আপডেট ব্যর্থ', 'error'); }
     finally { setSaving(false); }
+  };
+
+  const handleStart = async () => {
+    setSaving(true);
+    try {
+      await updatePresence(uid, {
+        isStudying: true,
+        subject: entry.subject,
+        chapter: entry.chapter || null,
+        startedAt: new Date().toISOString()
+      });
+      toast('স্টাডি সেশন শুরু হয়েছে! 📚', 'success');
+    } catch {
+      toast('Failed to start session', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = () => {
@@ -410,8 +478,27 @@ function ScheduleEntryCard({ entry, uid, onUpdated, onDeleted }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-white bangla">{SUBJECT_DISPLAY_NAMES[entry.subject] || entry.subject}</p>
           {entry.chapter && <p className="text-xs text-slate-500 mt-0.5 bangla">{entry.chapter}</p>}
-          <p className="text-[11px] text-slate-600 mt-1">{entry.date} · {entry.time}</p>
+          <p className="text-[11px] text-slate-600 mt-1">{entry.date} · {entry.time} - {entry.endTime || 'No end time'}</p>
           {entry.notes && <p className="text-[11px] text-slate-500 mt-0.5 bangla">{entry.notes}</p>}
+          
+          {(() => {
+            const cd = getCountdown();
+            if (!cd) return null;
+            return (
+              <div className="mt-2 flex items-center gap-2">
+                {cd.live ? (
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
+                    <span className="relative flex h-2 w-2 mr-0.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    Live Now
+                  </span>
+                ) : null}
+                <span className="text-[11px] text-cyan-400/80 font-medium">{cd.text}</span>
+              </div>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium bangla ${statusStyle}`}>
@@ -422,6 +509,10 @@ function ScheduleEntryCard({ entry, uid, onUpdated, onDeleted }) {
 
       {entry.status === 'pending' && (
         <div className="flex gap-2 mt-3">
+          <button onClick={handleStart} disabled={saving}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium hover:bg-blue-500/20 disabled:opacity-50">
+            ▶️ শুরু
+          </button>
           <button onClick={() => setStatus('completed')} disabled={saving}
             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-medium hover:bg-green-500/20 disabled:opacity-50">
             <CheckCircle size={13} /> সম্পূর্ণ

@@ -3,62 +3,30 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Unlock, Bell, BellOff, Wifi } from 'lucide-react';
 import { useAuthStore } from '../../store';
 import {
-  subscribeToChatRoom,
   updateLastRead,
   sendPushNotification,
 } from '../../firebase/db';
 import { isPushGranted, requestPushPermission } from '../../firebase/messaging';
 import { usePartnerStats } from '../../hooks/usePartnerStats';
+import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
 import { formatDistanceToNow } from 'date-fns';
 import ChatUnlockGate from './ChatUnlockGate';
 import MessageList    from './MessageList';
 import ChatInput      from './ChatInput';
 
-function useCountdown(expiresAt) {
-  const [remaining, setRemaining] = useState(null);
-  useEffect(() => {
-    if (!expiresAt) { setRemaining(null); return; }
-    const end = expiresAt?.toDate ? expiresAt.toDate() : new Date(expiresAt);
-    const tick = () => {
-      const diff = Math.max(0, Math.floor((end - Date.now()) / 1000));
-      setRemaining(diff);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [expiresAt]);
-  return remaining;
-}
-
-function formatCountdown(secs) {
-  if (secs === null) return '';
-  const m = String(Math.floor(secs / 60)).padStart(2, '0');
-  const s = String(secs % 60).padStart(2, '0');
-  return `${m}:${s}`;
-}
-
 export default function ChatPage() {
   const user    = useAuthStore(s => s.user);
   const partner = useAuthStore(s => s.partner);
 
-  const [chatRoom, setChatRoom] = useState(null);
-  const [loading,  setLoading]  = useState(true);
+  const [loading,  setLoading]  = useState(false);
   const [replyTo,  setReplyTo]  = useState(null);
   const [pushGranted, setPushGranted] = useState(isPushGranted());
   const [pushRequesting, setPushRequesting] = useState(false);
   const [showPushBanner, setShowPushBanner] = useState(false);
 
   const partnerStats = usePartnerStats();
+  const { isUnlocked } = useMyUnlockProgress();
   const hasMarkedRead = useRef(false);
-
-  // Subscribe to chat room state
-  useEffect(() => {
-    const unsub = subscribeToChatRoom(data => {
-      setChatRoom(data);
-      setLoading(false);
-    });
-    return unsub;
-  }, []);
 
   // Mark messages as read when chat opens
   useEffect(() => {
@@ -113,9 +81,7 @@ export default function ChatPage() {
     }
   }, [user, partner?.uid]);
 
-  const remaining  = useCountdown(chatRoom?.expiresAt);
-  const isExpired  = chatRoom?.unlocked && remaining === 0;
-  const isUnlocked = chatRoom?.unlocked && !isExpired;
+  }, [user, partner?.uid]);
 
   // Compute precise online status (active within last 2 mins)
   const isOnline = partnerStats?.lastSeen
@@ -148,7 +114,7 @@ export default function ChatPage() {
             <h2 className="text-sm font-semibold text-white">StudyVerse Chat 💬</h2>
             <div className="flex items-center gap-2">
               <p className={`text-xs ${isUnlocked ? 'text-green-400' : 'text-slate-500'}`}>
-                {isUnlocked ? 'Chat is open!' : isExpired ? 'Session ended' : 'Locked — study 8h each to unlock'}
+                {isUnlocked ? 'Chat is open!' : 'Locked — complete daily goals to unlock'}
               </p>
               {/* Partner online status */}
               {isUnlocked && partnerStats && (
@@ -178,15 +144,6 @@ export default function ChatPage() {
             {pushGranted ? <Bell size={15} /> : <BellOff size={15} />}
           </button>
 
-          {/* Countdown timer */}
-          {isUnlocked && remaining !== null && (
-            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-1.5">
-              <span className="text-xs text-green-400">Closes in</span>
-              <span className={`font-mono text-sm font-bold ${remaining < 300 ? 'text-red-400 animate-pulse' : 'text-green-400'}`}>
-                {formatCountdown(remaining)}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -252,7 +209,7 @@ export default function ChatPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex-1 overflow-y-auto"
           >
-            <ChatUnlockGate chatRoom={chatRoom} isExpired={isExpired} />
+            <ChatUnlockGate />
           </motion.div>
         )}
       </AnimatePresence>

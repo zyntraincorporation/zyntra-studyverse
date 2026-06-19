@@ -605,6 +605,23 @@ export function subscribeToMessages(callback, limitCount = 60) {
   });
 }
 
+export function subscribeToTodayVocabCount(userId, callback) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(today);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  const q = query(
+    vocabWordsCol(userId),
+    where('createdAt', '>=', Timestamp.fromDate(today)),
+    where('createdAt', '<=', Timestamp.fromDate(endOfDay))
+  );
+
+  return onSnapshot(q, snap => {
+    callback(snap.size);
+  });
+}
+
 // Paginate — fetch older messages before a given cursor doc snapshot
 export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
   const cursorRef = doc(db, 'chat', chatRoomId, 'messages', oldestDocId);
@@ -790,24 +807,10 @@ export async function updateChatStudyMinutes(userId, displayName, minutesOrObj) 
     const data = room.exists() ? room.data() : {};
     const updatedData = { ...data, [fieldKey]: eligible, [nameKey]: displayName };
 
-    // Collect all user minute entries
-    const allMinuteKeys = Object.keys(updatedData).filter(k => k.endsWith('_minutes'));
-    const allMet        = allMinuteKeys.filter(k => (updatedData[k] || 0) >= chatUnlockMinutes).length >= 2;
+    // We no longer evaluate global chat unlocking here.
+    // Chat unlock is evaluated individually on the frontend based on:
+    // (Eligible Study Time >= 3h) && (Vocabulary Learned Today >= 20)
 
-    if (allMet && !data.unlocked) {
-      const now  = new Date();
-      const exp  = new Date(now.getTime() + chatWindowMinutes * 60 * 1000);
-      updatedData.unlocked    = true;
-      updatedData.unlockedAt  = Timestamp.fromDate(now);
-      updatedData.expiresAt   = Timestamp.fromDate(exp);
-    } else if (data.unlocked) {
-      const expiresAt = data.expiresAt?.toDate?.();
-      if (expiresAt && new Date() > expiresAt) {
-        updatedData.unlocked = false;
-        updatedData.unlockedAt = null;
-        updatedData.expiresAt  = null;
-      }
-    }
     tx.set(roomRef, updatedData, { merge: true });
   });
 }
@@ -971,6 +974,15 @@ export async function getScheduleEntries(userId, date) {
   const q = query(scheduleCol(userId), where('date', '==', date), orderBy('time', 'asc'));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getAllScheduleEntries(userId) {
+  const snap = await getDocs(scheduleCol(userId));
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return docs.sort((a, b) => {
+    if (a.date === b.date) return (b.time || '').localeCompare(a.time || '');
+    return (b.date || '').localeCompare(a.date || '');
+  });
 }
 
 export async function updateScheduleEntry(userId, entryId, data) {

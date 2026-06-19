@@ -3,7 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, CheckSquare, Timer, BarChart2, RotateCcw,
   AlertTriangle, CalendarDays, BookOpen, Sparkles, LogOut,
-  Menu, X, Zap, FileText, MessageCircle, Trophy, Library,
+  Menu, X, Zap, FileText, MessageCircle, Trophy, Library, History,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useTimerStore } from '../../store';
@@ -26,6 +26,7 @@ function formatElapsed(s) {
 const NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard'    },
   { to: '/checkin',    icon: CheckSquare,     label: 'Check-in'     },
+  { to: '/checkins-history', icon: History,   label: 'Check-ins History' },
   { to: '/timer',      icon: Timer,           label: 'Study Timer'  },
   { to: '/stats',      icon: BarChart2,       label: 'Weekly Stats' },
   { to: '/chapters',   icon: BookOpen,        label: 'Chapters'     },
@@ -282,6 +283,7 @@ function PageTitle() {
   const titles = {
     '/':            'Dashboard',
     '/checkin':     'Session Check-in',
+    '/checkins-history': 'Check-ins History',
     '/timer':       'Study Timer',
     '/stats':       'Weekly Statistics',
     '/chapters':    'Chapter Progress',

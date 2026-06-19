@@ -5,6 +5,8 @@ import { onAuthChange } from './firebase/auth';
 import { findUserByEmail, createOrUpdateUser } from './firebase/db';
 import { getPartnerEmail, getDisplayName } from './lib/constants';
 import { onForegroundMessage } from './firebase/messaging';
+import { usePresenceNotifications } from './hooks/usePresenceNotifications';
+import { useCheckinAlerts } from './hooks/useCheckinAlerts';
 
 
 import AppLayout       from './components/layout/AppLayout';
@@ -22,6 +24,7 @@ import RoutinePage     from './pages/RoutinePage';
 import VocabularyPage  from './pages/VocabularyPage';
 import ChatPage        from './features/chat/ChatPage';
 import LeaderboardPage from './features/leaderboard/LeaderboardPage';
+import CheckinHistoryPage from './pages/CheckinHistoryPage';
 import Toast           from './components/ui/Toast';
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -111,6 +114,9 @@ function FCMForegroundListener() {
 
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  usePresenceNotifications();
+  useCheckinAlerts();
+
   return (
     <BrowserRouter>
       <AuthInitializer />
@@ -140,6 +146,7 @@ export default function App() {
           <Route path="vocabulary"      element={<VocabularyPage />}  />
           <Route path="chat"            element={<ChatPage />}        />
           <Route path="leaderboard"     element={<LeaderboardPage />} />
+          <Route path="checkins-history" element={<CheckinHistoryPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
