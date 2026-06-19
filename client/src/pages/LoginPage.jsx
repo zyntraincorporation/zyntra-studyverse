@@ -65,7 +65,7 @@ export default function LoginPage() {
             <span className="text-4xl">⚡</span>
           </motion.div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-400 bg-clip-text text-transparent">
-            ZYNTRA
+            Zyntra StudyVerse
           </h1>
           <p className="text-slate-400 text-sm mt-1 tracking-widest uppercase">StudyVerse</p>
           <p className="text-slate-500 text-xs mt-3">Private couple study ecosystem</p>

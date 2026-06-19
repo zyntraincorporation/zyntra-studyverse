@@ -129,7 +129,7 @@ export default function AppLayout() {
             <Zap size={15} className="text-white" />
           </div>
           <div>
-            <div className="text-sm font-bold tracking-wide text-white">ZYNTRA</div>
+            <div className="text-sm font-bold tracking-wide text-white">Zyntra StudyVerse</div>
             <div className="text-[10px] text-white/30 uppercase tracking-widest">StudyVerse</div>
           </div>
           <button className="ml-auto lg:hidden text-white/40 hover:text-white" onClick={() => setSidebarOpen(false)}>
@@ -297,7 +297,7 @@ function PageTitle() {
     '/leaderboard': 'Leaderboard',
     '/chat':        'StudyVerse Chat',
   };
-  return <h1 className="text-sm font-semibold text-white/80">{titles[location.pathname] || 'ZYNTRA'}</h1>;
+  return <h1 className="text-sm font-semibold text-white/80">{titles[location.pathname] || 'Zyntra StudyVerse'}</h1>;
 }
 
 function BSTClock() {

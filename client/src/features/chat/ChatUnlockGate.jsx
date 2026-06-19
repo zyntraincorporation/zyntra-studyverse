@@ -41,9 +41,11 @@ export default function ChatUnlockGate({ chatRoom, isExpired }) {
   // Unified hook — deduplicates listeners, fixes sync bug
   const partnerStats = usePartnerStats();
 
-  const myMinutes   = chatRoom ? (chatRoom[`${user?.uid}_minutes`] || 0) : 0;
-  const myDone      = myMinutes        >= THRESHOLD;
-  const partnerDone = partnerStats.studyMinutesToday >= THRESHOLD;
+  const myMinutes      = chatRoom ? (chatRoom[`${user?.uid}_minutes`] || 0) : 0;
+  const partnerMinutes = chatRoom ? (chatRoom[`${partner?.uid}_minutes`] || 0) : 0;
+  
+  const myDone         = myMinutes      >= THRESHOLD;
+  const partnerDone    = partnerMinutes >= THRESHOLD;
 
   const getMessage = () => {
     if (isExpired)        return { emoji: '⏰', text: 'Chat window ended. Study 8h again tomorrow to unlock!', color: 'text-slate-400' };
@@ -81,7 +83,7 @@ export default function ChatUnlockGate({ chatRoom, isExpired }) {
         />
         <ProgressBar
           label={partner?.displayName || 'Partner'}
-          minutes={partnerStats.studyMinutesToday}
+          minutes={partnerMinutes}
           color="from-purple-500 to-pink-500"
         />
       </div>
