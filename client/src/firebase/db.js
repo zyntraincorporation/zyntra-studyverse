@@ -812,27 +812,6 @@ export async function updateChatStudyMinutes(userId, displayName, minutesOrObj) 
   });
 }
 
-export function subscribeToMessages(callback) {
-  const q = query(
-    collection(db, 'chat', chatRoomId, 'messages'),
-    orderBy('createdAt', 'asc'),
-    limit(100)
-  );
-  return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
-}
-
-// replyTo: { id, text, senderName } — optional, stored only when replying
-export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
-  const expiresAt = new Date(Date.now() + messageTTLMs);
-  await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
-    senderId, text: text || null, mediaUrl, mediaType,
-    ...(replyTo ? { replyTo } : {}),
-    createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
-  });
-}
-
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AI REPORTS
