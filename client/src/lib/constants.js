@@ -4,7 +4,7 @@
 
 export const COUPLE_CONFIG = {
   saifulEmail:           'saifulislamnirob45@gmail.com',
-  lizaEmail:             'shahinurislamliza2@gmail.com',
+  shahinurEmail:         'shahinurislamliza2@gmail.com', // display name: Shahinur
   chatRoomId:            'zyntra-main-chat',
   chatUnlockMinutes:     480,  // 8 hours
   chatWindowMinutes:     60,   // 1-hour chat window after unlock
@@ -12,14 +12,14 @@ export const COUPLE_CONFIG = {
 };
 
 export function getPartnerEmail(myEmail) {
-  if (myEmail === COUPLE_CONFIG.saifulEmail) return COUPLE_CONFIG.lizaEmail;
-  if (myEmail === COUPLE_CONFIG.lizaEmail)   return COUPLE_CONFIG.saifulEmail;
+  if (myEmail === COUPLE_CONFIG.saifulEmail)  return COUPLE_CONFIG.shahinurEmail;
+  if (myEmail === COUPLE_CONFIG.shahinurEmail) return COUPLE_CONFIG.saifulEmail;
   return null;
 }
 
 export function getDisplayName(email) {
-  if (email === COUPLE_CONFIG.saifulEmail) return 'Saiful';
-  if (email === COUPLE_CONFIG.lizaEmail)   return 'Liza';
+  if (email === COUPLE_CONFIG.saifulEmail)  return 'Saiful';
+  if (email === COUPLE_CONFIG.shahinurEmail) return 'Shahinur';
   return 'User';
 }
 

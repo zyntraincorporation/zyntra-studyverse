@@ -12,7 +12,8 @@ export default function WordForge() {
   const { mutate: aiAutofill, isPending: autofilling } = useAIAutofill();
 
   const [form, setForm] = useState({
-    word: '', banglaMeaning: '', pronunciation: '',
+    word: '', banglaMeaning: '', englishMeaning: '', pronunciation: '',
+    partOfSpeech: '', exampleSentence: '',
     synonyms: '', antonyms: '', antonymMeaning: '',
     notes: '', difficulty: 3, tags: '',
   });
@@ -21,12 +22,15 @@ export default function WordForge() {
     if (forgePrefill) {
       setForm(f => ({
         ...f,
-        word:           forgePrefill.word          || f.word,
-        banglaMeaning:  forgePrefill.banglaMeaning  || '',
-        pronunciation:  forgePrefill.pronunciation  || '',
+        word:           forgePrefill.word           || f.word,
+        banglaMeaning:  forgePrefill.banglaMeaning   || forgePrefill.bnMeaning || '',
+        englishMeaning: forgePrefill.englishMeaning  || forgePrefill.definition || '',
+        pronunciation:  forgePrefill.pronunciation   || '',
+        partOfSpeech:   forgePrefill.partOfSpeech    || '',
+        exampleSentence: forgePrefill.example        || '',
         synonyms:       (forgePrefill.synonyms || []).join(', '),
         antonyms:       (forgePrefill.antonyms || []).join(', '),
-        antonymMeaning: forgePrefill.antonymMeaning || '',
+        antonymMeaning: forgePrefill.antonymMeaning  || '',
       }));
       clearForgePrefill();
     }
@@ -40,11 +44,14 @@ export default function WordForge() {
           if (!data) return;
           setForm(f => ({
             ...f,
-            banglaMeaning:  data.banglaMeaning  || f.banglaMeaning,
-            pronunciation:  data.pronunciation  || f.pronunciation,
-            synonyms:       (data.synonyms || []).join(', '),
-            antonyms:       (data.antonyms || []).join(', '),
-            antonymMeaning: data.antonymMeaning || '',
+            // Map normalized fields — banglaMeaning is always present after hook rewrite
+            banglaMeaning:   data.banglaMeaning   || data.bnMeaning    || f.banglaMeaning,
+            englishMeaning:  data.englishMeaning  || data.definition   || f.englishMeaning,
+            pronunciation:   data.pronunciation   || f.pronunciation,
+            partOfSpeech:    data.partOfSpeech    || f.partOfSpeech,
+            exampleSentence: data.example         || f.exampleSentence,
+            synonyms:        (data.synonyms  || []).join(', '),
+            antonyms:        (data.antonyms  || []).join(', '),
           }));
         },
         onError: () => {
@@ -62,15 +69,22 @@ export default function WordForge() {
     createWord({
       word:           form.word.trim(),
       banglaMeaning:  form.banglaMeaning.trim(),
-      pronunciation:  form.pronunciation.trim() || undefined,
+      englishMeaning: form.englishMeaning.trim() || undefined,
+      pronunciation:  form.pronunciation.trim()  || undefined,
+      partOfSpeech:   form.partOfSpeech.trim()   || undefined,
+      exampleSentence: form.exampleSentence.trim() || undefined,
       synonyms:       form.synonyms.split(',').map(s => s.trim()).filter(Boolean),
       antonyms:       form.antonyms.split(',').map(s => s.trim()).filter(Boolean),
-      antonymMeaning: form.antonymMeaning.trim() || undefined,
-      notes:          form.notes.trim() || undefined,
+      antonymMeaning: form.antonymMeaning.trim()  || undefined,
+      notes:          form.notes.trim()           || undefined,
       difficulty:     form.difficulty,
       tags:           form.tags.split(',').map(s => s.trim()).filter(Boolean),
     }, {
-      onSuccess: () => setForm({ word: '', banglaMeaning: '', pronunciation: '', synonyms: '', antonyms: '', antonymMeaning: '', notes: '', difficulty: 3, tags: '' }),
+      onSuccess: () => setForm({
+        word: '', banglaMeaning: '', englishMeaning: '', pronunciation: '',
+        partOfSpeech: '', exampleSentence: '',
+        synonyms: '', antonyms: '', antonymMeaning: '', notes: '', difficulty: 3, tags: '',
+      }),
     });
   }
 
@@ -125,7 +139,10 @@ export default function WordForge() {
         </div>
 
         {field('Bangla Meaning *', 'banglaMeaning', 'ক্ষণস্থায়ী')}
+        {field('English Definition', 'englishMeaning', 'Lasting for only a short time')}
         {field('Pronunciation', 'pronunciation', '/ɪˈfɛmərəl/')}
+        {field('Part of Speech', 'partOfSpeech', 'adjective')}
+        {field('Example Sentence', 'exampleSentence', 'The beauty of a rainbow is ephemeral.', true)}
         {field('Synonyms (comma-separated)', 'synonyms', 'transient, fleeting, momentary')}
         {field('Antonyms (comma-separated)', 'antonyms', 'permanent, enduring')}
         {field('Antonym Meaning (Bangla)', 'antonymMeaning', 'স্থায়ী')}

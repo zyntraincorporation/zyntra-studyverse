@@ -23,7 +23,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    const validEmails = [COUPLE_CONFIG.saifulEmail, COUPLE_CONFIG.lizaEmail];
+    const validEmails = [COUPLE_CONFIG.saifulEmail, COUPLE_CONFIG.shahinurEmail];
     if (!validEmails.includes(email.trim().toLowerCase())) {
       setError('This app is private. Unauthorized email.');
       return;
@@ -161,7 +161,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-slate-600 text-xs mt-6">
-          🔐 Private access only — Saiful & Liza
+          🔐 Private access only — Saiful & Shahinur
         </p>
       </motion.div>
     </div>

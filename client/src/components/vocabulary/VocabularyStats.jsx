@@ -7,19 +7,20 @@ import { useVocabularyWords, useRevisionQueue } from '../../hooks/vocabulary/use
 import { useStreakData } from '../../hooks/vocabulary/useVocabularyStats';
 
 export default function VocabularyStats() {
-  const { data: allWords }  = useVocabularyWords({});
+  const { data: allWords }   = useVocabularyWords({});
   const { data: queue = [] } = useRevisionQueue();
-  const { data: streak }    = useStreakData();
+  const { data: streak }     = useStreakData();
 
-  const total    = allWords?.total || 0;
-  const mastered = allWords?.words?.filter(w => w.masteryLevel >= 80).length || 0;
-  const due      = queue.length;
-  const fire     = streak?.currentStreak || 0;
+  // All accesses guarded with optional chaining and fallback values
+  const total    = allWords?.total    ?? allWords?.words?.length ?? 0;
+  const mastered = allWords?.words?.filter(w => (w?.masteryLevel ?? 0) >= 80)?.length ?? 0;
+  const due      = Array.isArray(queue) ? queue.length : 0;
+  const fire     = streak?.currentStreak ?? 0;
 
   const stats = [
-    { label: 'Total',    value: total,    icon: '📚', color: 'from-cyan-500 to-blue-600' },
-    { label: 'Mastered', value: mastered, icon: '⭐', color: 'from-emerald-500 to-teal-600' },
-    { label: 'Due',      value: due,      icon: '🔔', color: 'from-amber-500 to-orange-600' },
+    { label: 'Total',    value: total,      icon: '📚', color: 'from-cyan-500 to-blue-600' },
+    { label: 'Mastered', value: mastered,   icon: '⭐', color: 'from-emerald-500 to-teal-600' },
+    { label: 'Due',      value: due,        icon: '🔔', color: 'from-amber-500 to-orange-600' },
     { label: 'Streak',   value: `${fire}d`, icon: '🔥', color: 'from-rose-500 to-pink-600' },
   ];
 

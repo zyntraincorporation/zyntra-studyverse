@@ -681,13 +681,16 @@ export function subscribeToMessages(callback) {
   });
 }
 
-export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null) {
+// replyTo: { id, text, senderName } — optional, stored only when replying
+export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
   const expiresAt = new Date(Date.now() + messageTTLMs);
   await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
     senderId, text: text || null, mediaUrl, mediaType,
+    ...(replyTo ? { replyTo } : {}),
     createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
   });
 }
+
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AI REPORTS

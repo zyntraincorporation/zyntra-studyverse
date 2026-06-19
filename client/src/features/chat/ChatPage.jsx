@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Unlock } from 'lucide-react';
 import { useAuthStore } from '../../store';
@@ -35,6 +35,9 @@ export default function ChatPage() {
   const [chatRoom, setChatRoom] = useState(null);
   const [loading,  setLoading]  = useState(true);
 
+  // Reply state: { id, text, senderName } | null
+  const [replyTo, setReplyTo] = useState(null);
+
   useEffect(() => {
     const unsub = subscribeToChatRoom(data => {
       setChatRoom(data);
@@ -46,7 +49,7 @@ export default function ChatPage() {
   const remaining = useCountdown(chatRoom?.expiresAt);
 
   // Auto-detect expiry client-side
-  const isExpired = chatRoom?.unlocked && remaining === 0;
+  const isExpired  = chatRoom?.unlocked && remaining === 0;
   const isUnlocked = chatRoom?.unlocked && !isExpired;
 
   if (loading) {
@@ -90,8 +93,12 @@ export default function ChatPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            <MessageList />
-            <ChatInput isLocked={false} />
+            <MessageList onReply={setReplyTo} />
+            <ChatInput
+              isLocked={false}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+            />
           </motion.div>
         ) : (
           <motion.div
