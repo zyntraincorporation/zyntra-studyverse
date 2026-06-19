@@ -792,7 +792,7 @@ export async function updateChatStudyMinutes(userId, displayName, minutesOrObj) 
 
     // Collect all user minute entries
     const allMinuteKeys = Object.keys(updatedData).filter(k => k.endsWith('_minutes'));
-    const allMet        = allMinuteKeys.length >= 2 && allMinuteKeys.every(k => (updatedData[k] || 0) >= chatUnlockMinutes);
+    const allMet        = allMinuteKeys.filter(k => (updatedData[k] || 0) >= chatUnlockMinutes).length >= 2;
 
     if (allMet && !data.unlocked) {
       const now  = new Date();

@@ -56,18 +56,17 @@ export default function LoginPage() {
       >
         {/* Logo */}
         <div className="text-center mb-10">
-          <motion.div
+          <motion.img
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.1, type: 'spring', stiffness: 200 }}
-            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 to-purple-600 shadow-[0_0_40px_rgba(6,182,212,0.3)] mb-5"
-          >
-            <span className="text-4xl">⚡</span>
-          </motion.div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-400 bg-clip-text text-transparent">
-            Zyntra StudyVerse
+            src="/android-chrome-192x192.png"
+            alt="Zyntra StudyVerse"
+            className="w-20 h-20 rounded-2xl shadow-[0_0_40px_rgba(6,182,212,0.3)] mb-5 mx-auto"
+          />
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 via-blue-300 to-purple-400 bg-clip-text text-transparent leading-tight">
+            Zyntra<br />StudyVerse
           </h1>
-          <p className="text-slate-400 text-sm mt-1 tracking-widest uppercase">StudyVerse</p>
           <p className="text-slate-500 text-xs mt-3">Private couple study ecosystem</p>
         </div>
 

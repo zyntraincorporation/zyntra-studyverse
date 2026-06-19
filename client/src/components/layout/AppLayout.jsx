@@ -125,12 +125,9 @@ export default function AppLayout() {
       `}>
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.06]">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shadow-[0_0_12px_rgba(6,182,212,0.4)]">
-            <Zap size={15} className="text-white" />
-          </div>
+          <img src="/android-chrome-192x192.png" alt="Zyntra Icon" className="w-8 h-8 rounded-lg shadow-[0_0_12px_rgba(6,182,212,0.4)]" />
           <div>
-            <div className="text-sm font-bold tracking-wide text-white">Zyntra StudyVerse</div>
-            <div className="text-[10px] text-white/30 uppercase tracking-widest">StudyVerse</div>
+            <div className="text-sm font-bold tracking-wide text-white leading-tight">Zyntra<br/>StudyVerse</div>
           </div>
           <button className="ml-auto lg:hidden text-white/40 hover:text-white" onClick={() => setSidebarOpen(false)}>
             <X size={18} />
