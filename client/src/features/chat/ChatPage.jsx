@@ -1,17 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, Bell, BellOff, Wifi, AlertCircle } from 'lucide-react';
+import { Lock, Unlock, Bell, BellOff, Wifi, ShieldAlert } from 'lucide-react';
 import { useAuthStore } from '../../store';
 import {
   updateLastRead,
   sendPushNotification,
-  subscribeToEmergencyUsage,
-  EMERGENCY_CHAT_MAX_MS,
+  subscribeToEmergencyAccess,
 } from '../../firebase/db';
 import { isPushGranted, requestPushPermission } from '../../firebase/messaging';
 import { usePartnerStats } from '../../hooks/usePartnerStats';
 import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
-import { getBSTDateString } from '../../lib/bst';
 import { formatDistanceToNow } from 'date-fns';
 import ChatUnlockGate from './ChatUnlockGate';
 import MessageList    from './MessageList';
@@ -37,24 +35,23 @@ export default function ChatPage() {
   const [showPushBanner,  setShowPushBanner]  = useState(false);
   const [showEmergency,   setShowEmergency]   = useState(false);
 
-  // Emergency chat usage for display
-  const today = getBSTDateString();
-  const [emergencyUsedMs,    setEmergencyUsedMs]    = useState(0);
-  const [emergencyLimitHit,  setEmergencyLimitHit]  = useState(false);
+  // ── Emergency chat access state ────────────────────────────────────────────
+  const [emergencyActive,    setEmergencyActive]    = useState(false);
+  const [emergencyRemaining, setEmergencyRemaining] = useState(0);
 
   const partnerStats = usePartnerStats();
   const { isUnlocked } = useMyUnlockProgress();
   const hasMarkedRead = useRef(false);
 
-  // ── Subscribe to today's emergency chat usage for display ─────────────────
+  // ── Subscribe to emergency access (is there an active 1-hour session?) ────
   useEffect(() => {
     if (!user?.uid) return;
-    const unsub = subscribeToEmergencyUsage(user.uid, today, ({ usedMs }) => {
-      setEmergencyUsedMs(usedMs);
-      setEmergencyLimitHit(usedMs >= EMERGENCY_CHAT_MAX_MS);
+    const unsub = subscribeToEmergencyAccess(user.uid, ({ isActive, remainingMs }) => {
+      setEmergencyActive(isActive);
+      setEmergencyRemaining(remainingMs);
     });
     return unsub;
-  }, [user?.uid, today]);
+  }, [user?.uid]);
 
   // ── Mark messages as read when chat opens ─────────────────────────────────
   useEffect(() => {
@@ -106,7 +103,6 @@ export default function ChatPage() {
     }
   }, [user, partner?.uid]);
 
-  // ── Partner online status ─────────────────────────────────────────────────
   const isOnline = partnerStats?.lastSeen
     ? (Date.now() - partnerStats.lastSeen.getTime() < 120000)
     : false;
@@ -116,8 +112,6 @@ export default function ChatPage() {
     : partnerStats?.lastSeen
       ? `last seen ${formatDistanceToNow(partnerStats.lastSeen)} ago`
       : 'offline';
-
-  const emergencyRemainingMs = Math.max(0, EMERGENCY_CHAT_MAX_MS - emergencyUsedMs);
 
   return (
     <div className="flex flex-col h-[calc(100vh-57px)] bg-[#080b14]">
@@ -162,28 +156,26 @@ export default function ChatPage() {
             {pushGranted ? <Bell size={15} /> : <BellOff size={15} />}
           </button>
 
-          {/* ── Emergency Chat button (always visible) ── */}
+          {/* ── Emergency Chat button ── */}
           <button
             id="emergency-chat-btn"
             onClick={() => setShowEmergency(true)}
-            disabled={emergencyLimitHit}
-            title={
-              emergencyLimitHit
-                ? 'Emergency chat limit reached for today'
-                : `Emergency Chat — ${formatCountdown(emergencyRemainingMs)} remaining`
+            title={emergencyActive
+              ? `Emergency active — ${formatCountdown(emergencyRemaining)} remaining`
+              : 'Emergency Chat — tap to get 1-hour access'
             }
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold
                         transition-all border ${
-              emergencyLimitHit
-                ? 'border-slate-700/50 text-slate-600 cursor-not-allowed'
+              emergencyActive
+                ? 'border-orange-500/50 text-orange-400 bg-orange-500/15'
                 : 'border-orange-500/30 text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500/50'
             }`}
           >
-            <AlertCircle size={12} />
+            <ShieldAlert size={12} />
             <span className="hidden sm:inline">Emergency</span>
-            {!emergencyLimitHit && (
+            {emergencyActive && (
               <span className="font-mono text-[10px] opacity-80">
-                {formatCountdown(emergencyRemainingMs)}
+                {formatCountdown(emergencyRemaining)}
               </span>
             )}
           </button>

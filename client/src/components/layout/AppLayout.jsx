@@ -26,7 +26,7 @@ function formatElapsed(s) {
 const NAV = [
   { to: '/',           icon: LayoutDashboard, label: 'Dashboard'    },
   { to: '/checkin',    icon: CheckSquare,     label: 'Check-in'     },
-  { to: '/checkins-history', icon: History,   label: 'Check-ins History' },
+  { to: '/checkins-history', icon: History,   label: 'My Check-ins' },
   { to: '/timer',      icon: Timer,           label: 'Study Timer'  },
   { to: '/stats',      icon: BarChart2,       label: 'Weekly Stats' },
   { to: '/chapters',   icon: BookOpen,        label: 'Chapters'     },
@@ -283,7 +283,7 @@ function PageTitle() {
   const titles = {
     '/':            'Dashboard',
     '/checkin':     'Session Check-in',
-    '/checkins-history': 'Check-ins History',
+    '/checkins-history': 'My Check-ins',
     '/timer':       'Study Timer',
     '/stats':       'Weekly Statistics',
     '/chapters':    'Chapter Progress',

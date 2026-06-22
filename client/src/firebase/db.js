@@ -646,11 +646,13 @@ export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
 }
 
 // replyTo: { id, text, senderName } — optional, stored only when replying
-export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
+// isEmergency: true → stored in main chat but excluded from unread badge counts
+export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null, isEmergency = false) {
   const expiresAt = new Date(Date.now() + messageTTLMs);
   await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
     senderId, text: text || null, mediaUrl, mediaType,
-    ...(replyTo ? { replyTo } : {}),
+    ...(replyTo    ? { replyTo }          : {}),
+    ...(isEmergency ? { isEmergency: true } : {}),
     createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
   });
 }
@@ -702,7 +704,9 @@ export function subscribeToUnreadCount(userId, callback) {
           );
 
       innerUnsub = onSnapshot(q, (msgSnap) => {
-        callback(msgSnap.size);
+        // Emergency messages are excluded from the unread badge
+        const count = msgSnap.docs.filter(d => !d.data().isEmergency).length;
+        callback(count);
       }, () => callback(0));
     } catch {
       callback(0);
@@ -759,37 +763,51 @@ export async function sendPushNotification(toUid, { title, body, type = 'default
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// EMERGENCY CHAT (10 min/day, no study requirement)
-// Stored at: emergencyChat/{userId}/daily/{bstDate}
+// EMERGENCY CHAT — 1-hour temporary access bypass
+//
+// Design: Emergency Chat is an ACCESS PERMISSION layer only.
+// • Activation timestamp stored in users/{userId}.emergencyActivatedAt
+// • Access is valid for 1 hour from activation
+// • Messages are sent to the SAME main chat collection (no separate collection)
+// • Messages carry isEmergency:true so they are excluded from unread counts
+// • No push/popup/unread notifications are sent
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const EMERGENCY_CHAT_MAX_MS = 10 * 60 * 1000; // 10 minutes
+export const EMERGENCY_CHAT_DURATION_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Returns a real-time subscription to today's emergency chat usage (in ms).
- * callback receives { usedMs: number }
+ * Activates emergency chat by stamping the current server time onto the user
+ * document. The client uses this timestamp to calculate the remaining window.
+ * Calling this again while an active session exists simply resets the 1-hour
+ * clock (intentional — the button is always available).
  */
-export function subscribeToEmergencyUsage(userId, bstDate, callback) {
-  const docRef = doc(db, 'emergencyChat', userId, 'daily', bstDate);
-  return onSnapshot(docRef, (snap) => {
-    callback(snap.exists() ? { usedMs: snap.data().usedMs || 0 } : { usedMs: 0 });
-  });
-}
-
-/**
- * Records elapsed ms to emergency chat usage for today.
- * Uses merge so concurrent updates are safe.
- */
-export async function addEmergencyUsage(userId, bstDate, additionalMs) {
-  const docRef = doc(db, 'emergencyChat', userId, 'daily', bstDate);
-  await setDoc(docRef, {
-    usedMs: increment(additionalMs),
-    date: bstDate,
+export async function activateEmergencyChat(userId) {
+  await setDoc(ref('users', userId), {
+    emergencyActivatedAt: now(),
     updatedAt: now(),
   }, { merge: true });
 }
 
-export { EMERGENCY_CHAT_MAX_MS };
+/**
+ * Subscribes to a user's emergency access state in real-time.
+ * callback receives: { isActive: boolean, activatedAt: Date|null, remainingMs: number }
+ */
+export function subscribeToEmergencyAccess(userId, callback) {
+  return onSnapshot(doc(db, 'users', userId), (snap) => {
+    if (!snap.exists()) {
+      callback({ isActive: false, activatedAt: null, remainingMs: 0 });
+      return;
+    }
+    const raw = snap.data()?.emergencyActivatedAt;
+    if (!raw) {
+      callback({ isActive: false, activatedAt: null, remainingMs: 0 });
+      return;
+    }
+    const activatedAt  = raw.toDate ? raw.toDate() : new Date(raw);
+    const remainingMs  = Math.max(0, EMERGENCY_CHAT_DURATION_MS - (Date.now() - activatedAt.getTime()));
+    callback({ isActive: remainingMs > 0, activatedAt, remainingMs });
+  });
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LEADERBOARD
@@ -1028,6 +1046,17 @@ export async function getAllScheduleEntries(userId) {
   return docs.sort((a, b) => {
     if (a.date === b.date) return (b.time || '').localeCompare(a.time || '');
     return (b.date || '').localeCompare(a.date || '');
+  });
+}
+
+export function subscribeToAllScheduleEntries(userId, callback) {
+  return onSnapshot(scheduleCol(userId), snap => {
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const sorted = docs.sort((a, b) => {
+      if (a.date === b.date) return (b.time || '').localeCompare(a.time || '');
+      return (b.date || '').localeCompare(a.date || '');
+    });
+    callback(sorted);
   });
 }
 

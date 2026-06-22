@@ -114,11 +114,10 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
-    // ── Emergency Chat usage (private, per user per day) ─────────────────────
-    // Stored at: emergencyChat/{userId}/daily/{bstDate}
-    // Each user tracks only their own 10-min daily allotment.
-    match /emergencyChat/{userId}/daily/{date} {
-      allow read, write: if isOwner(userId);
-    }
+    // ── Emergency Chat Access ─────────────────────────────────────────────────
+    // emergencyActivatedAt is stored as a field on the user document (users/{userId}).
+    // No separate emergencyChat collection needed.
+    // Access is granted via the users/{userId} write rule above (isOwner).
+
   }
 }
