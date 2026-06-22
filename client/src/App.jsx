@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store';
 import { onAuthChange } from './firebase/auth';
 import { findUserByEmail, createOrUpdateUser } from './firebase/db';
@@ -88,26 +88,34 @@ function AuthInitializer() {
 // ── FCM Foreground Message Handler ───────────────────────────────────────────
 function FCMForegroundListener() {
   const user = useAuthStore(s => s.user);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    // Listen for FCM messages when app is in foreground
     const unsubFCM = onForegroundMessage((payload) => {
       const { title, body } = payload.notification || {};
       const data = payload.data || {};
-      // Show via browser Notification API if permission granted
+
       if ('Notification' in window && Notification.permission === 'granted') {
         try {
-          new Notification(title || 'ZYNTRA StudyVerse', {
+          const n = new Notification(title || 'ZYNTRA StudyVerse', {
             body:  body || '',
             icon:  '/android-chrome-192x192.png',
             badge: '/favicon-32x32.png',
             tag:   data.type || 'zyntra',
           });
+          // Navigate to chat when a chat notification is clicked
+          n.onclick = () => {
+            window.focus();
+            if (data.type === 'chat_message' || data.type === 'emergency_chat') {
+              navigate('/chat');
+            }
+            n.close();
+          };
         } catch (_) {}
       }
     });
     return unsubFCM;
-  }, [user?.uid]); // eslint-disable-line
+  }, [user?.uid, navigate]); // eslint-disable-line
 
   return null;
 }

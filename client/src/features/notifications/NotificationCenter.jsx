@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store';
 import {
   subscribeToNotifications,
   subscribeToMessages,
   createNotification,
+  updateLastRead,
 } from '../../firebase/db';
 import NotificationDrawer from './NotificationDrawer';
 
@@ -14,14 +15,30 @@ export default function NotificationCenter() {
   const user     = useAuthStore(s => s.user);
   const partner  = useAuthStore(s => s.partner);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [notifications, setNotifications] = useState([]);
   const [open, setOpen] = useState(false);
 
-  // Track if we've already notified for a given message id
-  const notifiedMsgIds = useRef(new Set());
+  // Track if we've already notified for a given message id — persists across re-renders
+  const notifiedMsgIds   = useRef(new Set());
   // Track first load — don't notify for messages already in history
-  const initialLoadDone = useRef(false);
+  const initialLoadDone  = useRef(false);
+  // Keep a stable ref to location so the message listener doesn't need to re-subscribe on route changes
+  const locationRef = useRef(location.pathname);
+  // Keep partner name current without re-subscribing the listener
+  const partnerRef  = useRef(partner?.displayName || 'Partner');
+
+  // Keep locationRef and partnerRef in sync without triggering re-subscriptions
+  useEffect(() => {
+    locationRef.current = location.pathname;
+    partnerRef.current  = partner?.displayName || 'Partner';
+
+    // When user navigates TO /chat, mark messages as read
+    if (location.pathname === '/chat' && user?.uid) {
+      updateLastRead(user.uid).catch(() => {});
+    }
+  }, [location.pathname, user?.uid, partner?.displayName]);
 
   // ── Subscribe to in-app notifications ──────────────────────────────────────
   useEffect(() => {
@@ -30,34 +47,57 @@ export default function NotificationCenter() {
     return unsub;
   }, [user?.uid]);
 
-  // ── Auto-create in-app notification on new chat messages ───────────────────
-  // Only fires when user is NOT already on the /chat page
+  // ── Stable message listener (does NOT re-subscribe on route changes) ────────
+  // Uses locationRef to read the current path without re-subscribing.
   useEffect(() => {
     if (!user?.uid) return;
 
+    // Reset on user change
+    notifiedMsgIds.current  = new Set();
+    initialLoadDone.current = false;
+
     const unsub = subscribeToMessages(msgs => {
       if (!initialLoadDone.current) {
-        // Seed the set with all current message ids (don't notify for history)
+        // Seed the set with all existing message ids — don't notify for history
         msgs.forEach(m => notifiedMsgIds.current.add(m.id));
         initialLoadDone.current = true;
         return;
       }
 
-      // Check for new messages from partner
       msgs.forEach(async (msg) => {
         if (notifiedMsgIds.current.has(msg.id)) return;
         notifiedMsgIds.current.add(msg.id);
 
-        // Only notify if message is from partner (not own messages)
+        // Only notify for messages from partner
         if (msg.senderId === user.uid) return;
 
-        // Don't create in-app notification if user is already on chat page
-        if (location.pathname === '/chat') return;
-
-        const senderName = partner?.displayName || 'Partner';
+        // Use ref so we always get the latest partner name (loads async)
+        const senderName = partnerRef.current || 'Partner';
         const preview    = msg.text
           ? (msg.text.length > 60 ? msg.text.slice(0, 60) + '…' : msg.text)
           : '📎 Media message';
+
+        // ── Browser notification ────────────────────────────────────────────
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try {
+            const n = new Notification(`New message from ${senderName} 💬`, {
+              body:  preview,
+              icon:  '/android-chrome-192x192.png',
+              badge: '/favicon-32x32.png',
+              tag:   `chat-msg-${msg.id}`,
+              renotify: true,
+            });
+            // Clicking the browser notification opens the chat tab
+            n.onclick = () => {
+              window.focus();
+              navigate('/chat');
+              n.close();
+            };
+          } catch (_) {}
+        }
+
+        // ── In-app notification (only when NOT already on /chat) ────────────
+        if (locationRef.current === '/chat') return;
 
         try {
           await createNotification(user.uid, {
@@ -73,15 +113,18 @@ export default function NotificationCenter() {
     }, 60);
 
     return unsub;
-  }, [user?.uid, location.pathname]); // eslint-disable-line
+  }, [user?.uid]); // ← deliberately exclude location/partner to avoid re-subscribing
 
   const unread = notifications.filter(n => !n.read).length;
+
+  const handleOpen = useCallback(() => setOpen(true), []);
+  const handleClose = useCallback(() => setOpen(false), []);
 
   return (
     <>
       <button
         id="notification-bell-btn"
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="relative p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/5 transition-all"
         aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
       >
@@ -104,7 +147,7 @@ export default function NotificationCenter() {
 
       <NotificationDrawer
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={handleClose}
         notifications={notifications}
         userId={user?.uid}
       />

@@ -606,15 +606,22 @@ export function subscribeToMessages(callback, limitCount = 60) {
 }
 
 export function subscribeToTodayVocabCount(userId, callback) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(today);
-  endOfDay.setHours(23, 59, 59, 999);
+  // Use BST-aware midnight so words added on the BST calendar day are counted
+  // regardless of the device's local timezone.
+  const BST_OFFSET_MS = 6 * 60 * 60 * 1000;
+  const nowInBST = new Date(Date.now() + BST_OFFSET_MS);
+  // BST midnight as a UTC-based Date
+  const bstMidnightUTC = new Date(
+    Date.UTC(nowInBST.getUTCFullYear(), nowInBST.getUTCMonth(), nowInBST.getUTCDate())
+    - BST_OFFSET_MS
+  );
+  // BST end-of-day (23:59:59.999 BST)
+  const bstEndOfDayUTC = new Date(bstMidnightUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
 
   const q = query(
     vocabWordsCol(userId),
-    where('createdAt', '>=', Timestamp.fromDate(today)),
-    where('createdAt', '<=', Timestamp.fromDate(endOfDay))
+    where('createdAt', '>=', Timestamp.fromDate(bstMidnightUTC)),
+    where('createdAt', '<=', Timestamp.fromDate(bstEndOfDayUTC))
   );
 
   return onSnapshot(q, snap => {
@@ -663,44 +670,50 @@ export async function updateLastRead(userId) {
 }
 
 export function subscribeToUnreadCount(userId, callback) {
-  // Subscribe to user doc to get lastReadAt, then count messages after it
-  const userUnsub = onSnapshot(doc(db, 'users', userId), async (snap) => {
+  // Fully-reactive two-layer listener:
+  // Layer 1 — watch the user doc for chatLastReadAt changes
+  // Layer 2 — watch the message collection after that timestamp
+  // Both layers fire instantly so the badge is always accurate.
+  let innerUnsub = null;
+
+  const outerUnsub = onSnapshot(doc(db, 'users', userId), (snap) => {
+    // Clean up previous inner listener whenever lastReadAt changes
+    if (innerUnsub) { innerUnsub(); innerUnsub = null; }
+
     if (!snap.exists()) { callback(0); return; }
     const lastReadAt = snap.data().chatLastReadAt;
-    if (!lastReadAt) {
-      // Never read — count recent messages not from this user
-      const q = query(
-        collection(db, 'chat', chatRoomId, 'messages'),
-        where('senderId', '!=', userId),
-        orderBy('senderId'),
-        orderBy('createdAt', 'desc'),
-        limit(99)
-      );
-      try {
-        const s = await getDocs(q);
-        callback(s.size);
-      } catch { callback(0); }
-      return;
-    }
-    // Count messages after lastReadAt that aren't from this user
-    const q = query(
-      collection(db, 'chat', chatRoomId, 'messages'),
-      where('senderId', '!=', userId),
-      where('createdAt', '>', lastReadAt),
-      orderBy('senderId'),
-      orderBy('createdAt', 'asc'),
-      limit(99)
-    );
+
     try {
-      const s = await getDocs(q);
-      callback(s.size);
-    } catch (err) {
-      // Fallback if composite index not ready
-      console.warn('[chat] unread count query failed, using 0:', err);
+      const q = lastReadAt
+        ? query(
+            collection(db, 'chat', chatRoomId, 'messages'),
+            where('senderId', '!=', userId),
+            where('createdAt', '>', lastReadAt),
+            orderBy('senderId'),
+            orderBy('createdAt', 'asc'),
+            limit(99)
+          )
+        : query(
+            collection(db, 'chat', chatRoomId, 'messages'),
+            where('senderId', '!=', userId),
+            orderBy('senderId'),
+            orderBy('createdAt', 'desc'),
+            limit(99)
+          );
+
+      innerUnsub = onSnapshot(q, (msgSnap) => {
+        callback(msgSnap.size);
+      }, () => callback(0));
+    } catch {
       callback(0);
     }
   });
-  return userUnsub;
+
+  // Return a combined cleanup function
+  return () => {
+    outerUnsub();
+    if (innerUnsub) innerUnsub();
+  };
 }
 
 // ── Real-time user stats (fixes partner study progress sync) ──────────────────
@@ -744,6 +757,39 @@ export async function sendPushNotification(toUid, { title, body, type = 'default
     console.warn('[push] Failed to send notification:', err);
   }
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EMERGENCY CHAT (10 min/day, no study requirement)
+// Stored at: emergencyChat/{userId}/daily/{bstDate}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const EMERGENCY_CHAT_MAX_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Returns a real-time subscription to today's emergency chat usage (in ms).
+ * callback receives { usedMs: number }
+ */
+export function subscribeToEmergencyUsage(userId, bstDate, callback) {
+  const docRef = doc(db, 'emergencyChat', userId, 'daily', bstDate);
+  return onSnapshot(docRef, (snap) => {
+    callback(snap.exists() ? { usedMs: snap.data().usedMs || 0 } : { usedMs: 0 });
+  });
+}
+
+/**
+ * Records elapsed ms to emergency chat usage for today.
+ * Uses merge so concurrent updates are safe.
+ */
+export async function addEmergencyUsage(userId, bstDate, additionalMs) {
+  const docRef = doc(db, 'emergencyChat', userId, 'daily', bstDate);
+  await setDoc(docRef, {
+    usedMs: increment(additionalMs),
+    date: bstDate,
+    updatedAt: now(),
+  }, { merge: true });
+}
+
+export { EMERGENCY_CHAT_MAX_MS };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LEADERBOARD

@@ -1,41 +1,69 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, Bell, BellOff, Wifi } from 'lucide-react';
+import { Lock, Unlock, Bell, BellOff, Wifi, AlertCircle } from 'lucide-react';
 import { useAuthStore } from '../../store';
 import {
   updateLastRead,
   sendPushNotification,
+  subscribeToEmergencyUsage,
+  EMERGENCY_CHAT_MAX_MS,
 } from '../../firebase/db';
 import { isPushGranted, requestPushPermission } from '../../firebase/messaging';
 import { usePartnerStats } from '../../hooks/usePartnerStats';
 import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
+import { getBSTDateString } from '../../lib/bst';
 import { formatDistanceToNow } from 'date-fns';
 import ChatUnlockGate from './ChatUnlockGate';
 import MessageList    from './MessageList';
 import ChatInput      from './ChatInput';
+import EmergencyChat  from './EmergencyChat';
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+function formatCountdown(remainingMs) {
+  const totalSec = Math.max(0, Math.ceil(remainingMs / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
 
 export default function ChatPage() {
   const user    = useAuthStore(s => s.user);
   const partner = useAuthStore(s => s.partner);
 
-  const [loading,  setLoading]  = useState(false);
-  const [replyTo,  setReplyTo]  = useState(null);
-  const [pushGranted, setPushGranted] = useState(isPushGranted());
-  const [pushRequesting, setPushRequesting] = useState(false);
-  const [showPushBanner, setShowPushBanner] = useState(false);
+  const [replyTo,         setReplyTo]         = useState(null);
+  const [pushGranted,     setPushGranted]     = useState(isPushGranted());
+  const [pushRequesting,  setPushRequesting]  = useState(false);
+  const [showPushBanner,  setShowPushBanner]  = useState(false);
+  const [showEmergency,   setShowEmergency]   = useState(false);
+
+  // Emergency chat usage for display
+  const today = getBSTDateString();
+  const [emergencyUsedMs,    setEmergencyUsedMs]    = useState(0);
+  const [emergencyLimitHit,  setEmergencyLimitHit]  = useState(false);
 
   const partnerStats = usePartnerStats();
   const { isUnlocked } = useMyUnlockProgress();
   const hasMarkedRead = useRef(false);
 
-  // Mark messages as read when chat opens
+  // ── Subscribe to today's emergency chat usage for display ─────────────────
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribeToEmergencyUsage(user.uid, today, ({ usedMs }) => {
+      setEmergencyUsedMs(usedMs);
+      setEmergencyLimitHit(usedMs >= EMERGENCY_CHAT_MAX_MS);
+    });
+    return unsub;
+  }, [user?.uid, today]);
+
+  // ── Mark messages as read when chat opens ─────────────────────────────────
   useEffect(() => {
     if (!user?.uid || hasMarkedRead.current) return;
     hasMarkedRead.current = true;
     updateLastRead(user.uid).catch(() => {});
   }, [user?.uid]);
 
-  // Re-mark on focus (user returns to tab)
+  // ── Re-mark on focus (user returns to tab) ────────────────────────────────
   useEffect(() => {
     const onFocus = () => {
       if (user?.uid) updateLastRead(user.uid).catch(() => {});
@@ -44,7 +72,7 @@ export default function ChatPage() {
     return () => window.removeEventListener('focus', onFocus);
   }, [user?.uid]);
 
-  // Show push banner after 3s if not granted
+  // ── Show push banner after 3 s if not granted ─────────────────────────────
   useEffect(() => {
     if (isPushGranted()) return;
     const id = setTimeout(() => setShowPushBanner(true), 3000);
@@ -65,12 +93,9 @@ export default function ChatPage() {
     }
   }, [user?.uid]);
 
-  // Called by ChatInput after a message is successfully sent
+  // ── Called by ChatInput after a message is successfully sent ──────────────
   const handleMessageSent = useCallback(async (text) => {
-    // Mark own messages as read immediately
     if (user?.uid) updateLastRead(user.uid).catch(() => {});
-
-    // Send push to partner
     if (partner?.uid) {
       sendPushNotification(partner.uid, {
         title: `${user?.displayName || 'Saiful'} 💬`,
@@ -81,28 +106,22 @@ export default function ChatPage() {
     }
   }, [user, partner?.uid]);
 
-
-  // Compute precise online status (active within last 2 mins)
+  // ── Partner online status ─────────────────────────────────────────────────
   const isOnline = partnerStats?.lastSeen
     ? (Date.now() - partnerStats.lastSeen.getTime() < 120000)
     : false;
-  
+
   const lastSeenText = isOnline
     ? 'online'
     : partnerStats?.lastSeen
       ? `last seen ${formatDistanceToNow(partnerStats.lastSeen)} ago`
       : 'offline';
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#080b14] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const emergencyRemainingMs = Math.max(0, EMERGENCY_CHAT_MAX_MS - emergencyUsedMs);
 
   return (
     <div className="flex flex-col h-[calc(100vh-57px)] bg-[#080b14]">
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-[#0c1220] shrink-0">
         <div className="flex items-center gap-3">
@@ -143,6 +162,31 @@ export default function ChatPage() {
             {pushGranted ? <Bell size={15} /> : <BellOff size={15} />}
           </button>
 
+          {/* ── Emergency Chat button (always visible) ── */}
+          <button
+            id="emergency-chat-btn"
+            onClick={() => setShowEmergency(true)}
+            disabled={emergencyLimitHit}
+            title={
+              emergencyLimitHit
+                ? 'Emergency chat limit reached for today'
+                : `Emergency Chat — ${formatCountdown(emergencyRemainingMs)} remaining`
+            }
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold
+                        transition-all border ${
+              emergencyLimitHit
+                ? 'border-slate-700/50 text-slate-600 cursor-not-allowed'
+                : 'border-orange-500/30 text-orange-400 bg-orange-500/10 hover:bg-orange-500/20 hover:border-orange-500/50'
+            }`}
+          >
+            <AlertCircle size={12} />
+            <span className="hidden sm:inline">Emergency</span>
+            {!emergencyLimitHit && (
+              <span className="font-mono text-[10px] opacity-80">
+                {formatCountdown(emergencyRemainingMs)}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -190,8 +234,8 @@ export default function ChatPage() {
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            <MessageList 
-              onReply={setReplyTo} 
+            <MessageList
+              onReply={setReplyTo}
               partnerLastReadAt={partnerStats?.chatLastReadAt}
               partnerLastSeen={partnerStats?.lastSeen}
             />
@@ -210,6 +254,13 @@ export default function ChatPage() {
           >
             <ChatUnlockGate />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Emergency Chat overlay ── */}
+      <AnimatePresence>
+        {showEmergency && (
+          <EmergencyChat onClose={() => setShowEmergency(false)} />
         )}
       </AnimatePresence>
     </div>

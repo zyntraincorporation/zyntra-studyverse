@@ -113,5 +113,12 @@ service cloud.firestore {
     match /notifications/{userId}/items/{notifId} {
       allow read, write: if isOwner(userId);
     }
+
+    // ── Emergency Chat usage (private, per user per day) ─────────────────────
+    // Stored at: emergencyChat/{userId}/daily/{bstDate}
+    // Each user tracks only their own 10-min daily allotment.
+    match /emergencyChat/{userId}/daily/{date} {
+      allow read, write: if isOwner(userId);
+    }
   }
 }
