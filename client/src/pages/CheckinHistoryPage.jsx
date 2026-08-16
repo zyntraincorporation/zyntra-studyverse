@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { CalendarDays, Clock, CheckCircle, XCircle, Search, Edit2, Trash2, Calendar as CalendarIcon, X, ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { CalendarDays, Clock, CheckCircle, XCircle, Search, Edit2, Trash2, Calendar as CalendarIcon, X, ChevronLeft, ChevronRight, Info, CheckSquare } from 'lucide-react';
 import { useAuthStore } from '../store';
 import { subscribeToAllScheduleEntries, updateScheduleEntry, deleteScheduleEntry } from '../firebase/db';
 import { SUBJECT_DISPLAY_NAMES } from '../lib/chapters-data';
