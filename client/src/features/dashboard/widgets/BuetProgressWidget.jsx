@@ -52,7 +52,10 @@ export default function BuetProgressWidget() {
     getChapters(uid).then(all => {
       setChapters(all.filter(ch => BUET_SUBJECTS.includes(ch.subject)));
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => {
+      console.error('[BuetProgressWidget] getChapters error:', err);
+      setLoading(false);
+    });
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);

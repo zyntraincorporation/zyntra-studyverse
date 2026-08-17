@@ -5,7 +5,7 @@ import { useTimerStore, useAuthStore, useUIStore } from '../store';
 import {
   saveSession, getSessionsByDateRange, deleteSession,
   getTodayStudyMinutes, recalculateAndSaveLeaderboard,
-  updateChatStudyMinutes, updatePresence, clearPresence,
+  updatePresence, clearPresence,
 } from '../firebase/db';
 import { getBSTDateString, getBSTDayName, formatDuration } from '../lib/bst';
 
@@ -62,7 +62,6 @@ function FreeTimer() {
       });
       const mins = await getTodayStudyMinutes(user.uid);
       await recalculateAndSaveLeaderboard(user.uid, user.displayName);
-      await updateChatStudyMinutes(user.uid, user.displayName, mins);
       toast(`Session saved — ${formatDuration(result.durationMinutes)} 🎉`, 'success');
     } catch {
       toast('Failed to save session', 'error');
@@ -282,7 +281,6 @@ function CustomLog() {
       });
       const totalMins = await getTodayStudyMinutes(user.uid);
       await recalculateAndSaveLeaderboard(user.uid, user.displayName);
-      await updateChatStudyMinutes(user.uid, user.displayName, totalMins);
       toast(`Logged ${formatDuration(mins)} 📝`, 'success');
       setHours(''); setMinutes(''); setChapter(''); setNotes('');
       // refresh history

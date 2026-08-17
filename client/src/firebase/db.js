@@ -12,6 +12,10 @@ import { db } from './config';
 import { getBSTDateString, getBSTYearMonth, getDateRange } from '../lib/bst';
 import { COUPLE_CONFIG, LEADERBOARD_SCORE_WEIGHTS } from '../lib/constants';
 
+// ── Couple Chat Config (must be at module top to avoid TDZ in all functions) ──
+const { chatRoomId, chatWindowMinutes, messageTTLMs } = COUPLE_CONFIG;
+const CHAT_SESSION_DURATION_MS = chatWindowMinutes * 60 * 1000;
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 const col  = (path)       => collection(db, path);
@@ -164,9 +168,41 @@ export async function getCheckinHistory(userId, days = 30) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function getChapters(userId) {
-  const q    = query(col('chapters'), where('userId', '==', userId), orderBy('subject'), orderBy('chapterNumber'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (!userId) return [];
+  try {
+    const q = query(col('chapters'), where('userId', '==', userId));
+    const snap = await getDocs(q);
+    const chapters = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Client-side sorting avoids requiring multi-field composite indexes
+    chapters.sort((a, b) => {
+      const subjA = a.subject || '';
+      const subjB = b.subject || '';
+      if (subjA !== subjB) return subjA.localeCompare(subjB);
+      return (Number(a.chapterNumber) || 0) - (Number(b.chapterNumber) || 0);
+    });
+    return chapters;
+  } catch (err) {
+    console.error('[getChapters] Firestore query error:', err);
+    throw err;
+  }
+}
+
+export function subscribeChapters(userId, onNext, onError) {
+  if (!userId) return () => {};
+  const q = query(col('chapters'), where('userId', '==', userId));
+  return onSnapshot(q, (snap) => {
+    const chapters = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    chapters.sort((a, b) => {
+      const subjA = a.subject || '';
+      const subjB = b.subject || '';
+      if (subjA !== subjB) return subjA.localeCompare(subjB);
+      return (Number(a.chapterNumber) || 0) - (Number(b.chapterNumber) || 0);
+    });
+    if (onNext) onNext(chapters);
+  }, (err) => {
+    console.error('[subscribeChapters] listener error:', err);
+    if (onError) onError(err);
+  });
 }
 
 export async function updateChapter(userId, subject, chapterNumber, data) {
@@ -177,30 +213,38 @@ export async function updateChapter(userId, subject, chapterNumber, data) {
 }
 
 export async function bulkUpdateChapters(userId, updates) {
-  const batch = writeBatch(db);
-  updates.forEach(u => {
-    const id = `${userId}_${u.subject}_${u.chapterNumber}`;
-    batch.set(ref('chapters', id), { ...u, userId, lastUpdated: now() }, { merge: true });
-  });
-  await batch.commit();
+  const chunkSize = 400;
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    const chunk = updates.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach(u => {
+      const id = `${userId}_${u.subject}_${u.chapterNumber}`;
+      batch.set(ref('chapters', id), { ...u, userId, lastUpdated: now() }, { merge: true });
+    });
+    await batch.commit();
+  }
 }
 
 export async function seedChapters(userId, chapters) {
-  const batch = writeBatch(db);
-  chapters.forEach(ch => {
-    const id = `${userId}_${ch.subject}_${ch.chapterNumber}`;
-    batch.set(ref('chapters', id), {
-      userId,
-      subject:        ch.subject,
-      chapterNumber:  ch.chapterNumber,
-      chapterName:    ch.chapterName,
-      status:         ch.status || 'not_started',
-      completedTopics: ch.completedTopics || 0,
-      totalTopics:    ch.totalTopics || null,
-      lastUpdated:    now(),
-    }, { merge: true });
-  });
-  await batch.commit();
+  const chunkSize = 400;
+  for (let i = 0; i < chapters.length; i += chunkSize) {
+    const chunk = chapters.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    chunk.forEach(ch => {
+      const id = `${userId}_${ch.subject}_${ch.chapterNumber}`;
+      batch.set(ref('chapters', id), {
+        userId,
+        subject:         ch.subject,
+        chapterNumber:   ch.chapterNumber,
+        chapterName:     ch.chapterName,
+        status:          ch.status || 'not_started',
+        completedTopics: ch.completedTopics || 0,
+        totalTopics:     ch.totalTopics || null,
+        lastUpdated:     now(),
+      }, { merge: true });
+    });
+    await batch.commit();
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -307,15 +351,16 @@ const REVISED_STATUSES = [
 ];
 
 export async function getDueRevisions(userId) {
+  if (!userId) return { dueToday: [], upcoming: [], today: getBSTDateString(), completionPct: 0, totalEligible: 0, totalRevised5: 0 };
   const today = getBSTDateString();
-  // Get all chapters with a completed/revised status
+  // Get all chapters for this user and filter eligible revision statuses in memory
   const chapQ = query(
     col('chapters'),
-    where('userId', '==', userId),
-    where('status', 'in', REVISED_STATUSES)
+    where('userId', '==', userId)
   );
   const chapSnap = await getDocs(chapQ);
-  const chapters = chapSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const allChapters = chapSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const chapters = allChapters.filter(ch => REVISED_STATUSES.includes(ch.status));
 
   // Get all revision logs
   const revQ = query(col('revisions'), where('userId', '==', userId), orderBy('revisedAt', 'desc'));
@@ -629,6 +674,30 @@ export function subscribeToTodayVocabCount(userId, callback) {
   });
 }
 
+/**
+ * Subscribes to a partner's today vocabulary count (BST-aware).
+ * Used by the unlock gate to check if the partner has also reached 20 vocab.
+ */
+export function subscribeToPartnerVocabCount(partnerUid, callback) {
+  const BST_OFFSET_MS = 6 * 60 * 60 * 1000;
+  const nowInBST = new Date(Date.now() + BST_OFFSET_MS);
+  const bstMidnightUTC = new Date(
+    Date.UTC(nowInBST.getUTCFullYear(), nowInBST.getUTCMonth(), nowInBST.getUTCDate())
+    - BST_OFFSET_MS
+  );
+  const bstEndOfDayUTC = new Date(bstMidnightUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  const q = query(
+    collection(db, 'vocabulary', partnerUid, 'words'),
+    where('createdAt', '>=', Timestamp.fromDate(bstMidnightUTC)),
+    where('createdAt', '<=', Timestamp.fromDate(bstEndOfDayUTC))
+  );
+
+  return onSnapshot(q, snap => {
+    callback(snap.size);
+  });
+}
+
 // Paginate — fetch older messages before a given cursor doc snapshot
 export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
   const cursorRef = doc(db, 'chat', chatRoomId, 'messages', oldestDocId);
@@ -762,52 +831,7 @@ export async function sendPushNotification(toUid, { title, body, type = 'default
   }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// EMERGENCY CHAT — 1-hour temporary access bypass
-//
-// Design: Emergency Chat is an ACCESS PERMISSION layer only.
-// • Activation timestamp stored in users/{userId}.emergencyActivatedAt
-// • Access is valid for 1 hour from activation
-// • Messages are sent to the SAME main chat collection (no separate collection)
-// • Messages carry isEmergency:true so they are excluded from unread counts
-// • No push/popup/unread notifications are sent
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-export const EMERGENCY_CHAT_DURATION_MS = 60 * 60 * 1000; // 1 hour
-
-/**
- * Activates emergency chat by stamping the current server time onto the user
- * document. The client uses this timestamp to calculate the remaining window.
- * Calling this again while an active session exists simply resets the 1-hour
- * clock (intentional — the button is always available).
- */
-export async function activateEmergencyChat(userId) {
-  await setDoc(ref('users', userId), {
-    emergencyActivatedAt: now(),
-    updatedAt: now(),
-  }, { merge: true });
-}
-
-/**
- * Subscribes to a user's emergency access state in real-time.
- * callback receives: { isActive: boolean, activatedAt: Date|null, remainingMs: number }
- */
-export function subscribeToEmergencyAccess(userId, callback) {
-  return onSnapshot(doc(db, 'users', userId), (snap) => {
-    if (!snap.exists()) {
-      callback({ isActive: false, activatedAt: null, remainingMs: 0 });
-      return;
-    }
-    const raw = snap.data()?.emergencyActivatedAt;
-    if (!raw) {
-      callback({ isActive: false, activatedAt: null, remainingMs: 0 });
-      return;
-    }
-    const activatedAt  = raw.toDate ? raw.toDate() : new Date(raw);
-    const remainingMs  = Math.max(0, EMERGENCY_CHAT_DURATION_MS - (Date.now() - activatedAt.getTime()));
-    callback({ isActive: remainingMs > 0, activatedAt, remainingMs });
-  });
-}
+// (Emergency Chat removed — feature no longer needed)
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LEADERBOARD
@@ -846,37 +870,175 @@ export async function recalculateAndSaveLeaderboard(userId, displayName) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// CHAT (conditional unlock system)
+// CHAT — Shared 45-minute session system
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-const { chatRoomId, chatUnlockMinutes, chatWindowMinutes, messageTTLMs } = COUPLE_CONFIG;
+//
+// Session state stored in chat/{chatRoomId} (the room doc itself):
+//   sessionDate           : "YYYY-MM-DD" (BST) — which day this session belongs to
+//   sessionStartedAt      : Timestamp | null    — when timer last resumed (null if paused/not started)
+//   sessionPausedAt       : Timestamp | null    — when timer last paused
+//   sessionAccumulatedMs  : number              — ms elapsed before last resume
+//   sessionExpiredAt      : Timestamp | null    — set when 45 min consumed
+//   activeUsers           : string[]            — UIDs currently in the chat window
+//
+// Remaining time formula (client-computed, server is authoritative):
+//   if sessionExpiredAt  → 0
+//   if sessionStartedAt && !sessionPausedAt:
+//     elapsed = accumulated + (now - sessionStartedAt)
+//   else:
+//     elapsed = accumulated
+//   remaining = max(0, 45min - elapsed)
+//
+// Timer runs when activeUsers.length > 0
+// Timer pauses when activeUsers.length === 0
+// Timer cannot be reset by refresh — sessionStartedAt is a server timestamp
 
 export function subscribeToChatRoom(callback) {
   return onSnapshot(ref('chat', chatRoomId), snap => {
-    callback(snap.exists() ? { id: snap.id, ...snap.data() } : { unlocked: false });
+    callback(snap.exists() ? { id: snap.id, ...snap.data() } : {});
   });
 }
 
-export async function updateChatStudyMinutes(userId, displayName, minutesOrObj) {
-  // Accept both a raw number (legacy) and the new { total, custom, timer } object
-  const eligible = typeof minutesOrObj === 'object'
-    ? Math.min(minutesOrObj.custom ?? 0, 120) + (minutesOrObj.timer ?? 0)
-    : minutesOrObj; // legacy callers pass a plain number — treat as-is
-
-  const fieldKey = `${userId}_minutes`;
-  const nameKey  = `${userId}_name`;
-  const roomRef  = ref('chat', chatRoomId);
-  await runTransaction(db, async (tx) => {
-    const room = await tx.get(roomRef);
-    const data = room.exists() ? room.data() : {};
-    const updatedData = { ...data, [fieldKey]: eligible, [nameKey]: displayName };
-
-    // We no longer evaluate global chat unlocking here.
-    // Chat unlock is evaluated individually on the frontend based on:
-    // (Eligible Study Time >= 3h) && (Vocabulary Learned Today >= 20)
-
-    tx.set(roomRef, updatedData, { merge: true });
+/**
+ * Subscribes to the shared chat session state in real-time.
+ * Returns everything needed to compute remaining time and session status.
+ */
+export function subscribeToChatSession(callback) {
+  return onSnapshot(ref('chat', chatRoomId), snap => {
+    if (!snap.exists()) {
+      callback({ sessionDate: null, sessionStartedAt: null, sessionPausedAt: null,
+                 sessionAccumulatedMs: 0, sessionExpiredAt: null, activeUsers: [] });
+      return;
+    }
+    const d = snap.data();
+    callback({
+      sessionDate:          d.sessionDate          || null,
+      sessionStartedAt:     d.sessionStartedAt     || null,
+      sessionPausedAt:      d.sessionPausedAt      || null,
+      sessionAccumulatedMs: d.sessionAccumulatedMs || 0,
+      sessionExpiredAt:     d.sessionExpiredAt     || null,
+      activeUsers:          d.activeUsers          || [],
+    });
   });
+}
+
+/**
+ * Called when a user enters the chat page.
+ * Adds them to activeUsers and resumes the timer if it was paused.
+ */
+export async function enterChatSession(userId) {
+  const today   = getBSTDateString();
+  const roomRef = ref('chat', chatRoomId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef);
+    const data = snap.exists() ? snap.data() : {};
+
+    const sessionDate          = data.sessionDate || null;
+    const sessionExpiredAt     = data.sessionExpiredAt || null;
+    const sessionAccumulatedMs = data.sessionAccumulatedMs || 0;
+    const sessionPausedAt      = data.sessionPausedAt || null;
+    const sessionStartedAt     = data.sessionStartedAt || null;
+    const activeUsers          = data.activeUsers || [];
+
+    // If session expired or belongs to a different day — reset for today
+    const isNewDay   = sessionDate !== today;
+    const isExpired  = !!sessionExpiredAt;
+
+    if (isNewDay || isExpired) {
+      // Fresh session for today
+      tx.set(roomRef, {
+        ...data,
+        sessionDate:          today,
+        sessionStartedAt:     Timestamp.now(),
+        sessionPausedAt:      null,
+        sessionAccumulatedMs: 0,
+        sessionExpiredAt:     null,
+        activeUsers:          [userId],
+      }, { merge: true });
+      return;
+    }
+
+    // Add user to activeUsers (deduplicated)
+    const newActiveUsers = activeUsers.includes(userId)
+      ? activeUsers
+      : [...activeUsers, userId];
+
+    // If timer was paused and now someone is entering, resume it
+    let updates = { activeUsers: newActiveUsers };
+    if (sessionPausedAt && !sessionExpiredAt) {
+      // Accumulate elapsed ms up to the pause point
+      const pauseEpoch = sessionPausedAt.toDate ? sessionPausedAt.toDate().getTime() : sessionPausedAt;
+      const startEpoch = sessionStartedAt ? (sessionStartedAt.toDate ? sessionStartedAt.toDate().getTime() : sessionStartedAt) : pauseEpoch;
+      const additionalMs = Math.max(0, pauseEpoch - startEpoch);
+      updates = {
+        ...updates,
+        sessionAccumulatedMs: sessionAccumulatedMs + additionalMs,
+        sessionStartedAt:     Timestamp.now(),
+        sessionPausedAt:      null,
+      };
+    } else if (!sessionStartedAt) {
+      // No session started yet — start it now
+      updates = { ...updates, sessionStartedAt: Timestamp.now(), sessionPausedAt: null };
+    }
+
+    tx.set(roomRef, updates, { merge: true });
+  });
+}
+
+/**
+ * Called when a user leaves the chat page.
+ * Removes them from activeUsers. If activeUsers becomes empty, pauses the timer.
+ */
+export async function leaveChatSession(userId) {
+  const roomRef = ref('chat', chatRoomId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(roomRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+
+    const activeUsers      = data.activeUsers || [];
+    const newActiveUsers   = activeUsers.filter(u => u !== userId);
+    const sessionStartedAt = data.sessionStartedAt || null;
+    const sessionPausedAt  = data.sessionPausedAt  || null;
+    const accumulated      = data.sessionAccumulatedMs || 0;
+    const sessionExpiredAt = data.sessionExpiredAt || null;
+
+    // If already expired or paused, just update activeUsers
+    if (sessionExpiredAt || sessionPausedAt || !sessionStartedAt) {
+      tx.set(roomRef, { activeUsers: newActiveUsers }, { merge: true });
+      return;
+    }
+
+    // If no one left in chat — pause the timer
+    if (newActiveUsers.length === 0) {
+      const startEpoch    = sessionStartedAt.toDate ? sessionStartedAt.toDate().getTime() : sessionStartedAt;
+      const additionalMs  = Math.max(0, Date.now() - startEpoch);
+      const newAccumulated = accumulated + additionalMs;
+      const updates = {
+        activeUsers:          newActiveUsers,
+        sessionPausedAt:      Timestamp.now(),
+        sessionAccumulatedMs: newAccumulated,
+        // Check if this pause means we've exhausted the session
+        ...(newAccumulated >= CHAT_SESSION_DURATION_MS
+          ? { sessionExpiredAt: Timestamp.now() }
+          : {}),
+      };
+      tx.set(roomRef, updates, { merge: true });
+    } else {
+      // Others still in chat — just remove this user, timer keeps running
+      tx.set(roomRef, { activeUsers: newActiveUsers }, { merge: true });
+    }
+  });
+}
+
+/**
+ * Marks the session as expired. Called by the client when remaining time hits 0.
+ */
+export async function expireChatSession() {
+  const roomRef = ref('chat', chatRoomId);
+  await setDoc(roomRef, { sessionExpiredAt: Timestamp.now() }, { merge: true });
 }
 
 
@@ -1154,3 +1316,359 @@ BUET exam: শুধু Physics, Chemistry, Math (PCM)
 ## 💡 এই সপ্তাহের Action Plan
 
 ## ✅ ভালো দিক`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOPIC PROGRESS — Firestore subcollection: chapters/{chapterDocId}/topics/{slug}
+//
+// Schema per topic doc:
+//   { slug, topicName, topicIndex, type, studied, studiedAt, revisions: { '1': Timestamp|null, '2': Timestamp|null, '3': Timestamp|null }, updatedAt }
+// ─────────────────────────────────────────────────────────────────────────────
+
+function topicsCol(chapterDocId) {
+  return collection(db, 'chapters', chapterDocId, 'topics');
+}
+function topicRef(chapterDocId, slug) {
+  return doc(db, 'chapters', chapterDocId, 'topics', slug);
+}
+
+/**
+ * Fetch all topic progress docs for a chapter.
+ * Returns a map: { [slug]: topicDoc }
+ */
+export async function getTopicProgress(chapterDocId) {
+  const snap = await getDocs(topicsCol(chapterDocId));
+  const map = {};
+  snap.docs.forEach(d => { map[d.id] = d.data(); });
+  return map;
+}
+
+/**
+ * Update a single topic's studied or revision status.
+ * Uses setDoc with merge:true for safe partial writes.
+ *
+ * @param {string} chapterDocId  - e.g. "uid_Physics1_1"
+ * @param {string} slug          - topic slug, e.g. "t01" | "cq" | "mock"
+ * @param {object} update        - { studied?: bool, revisionLevel?: 1|2|3, revisionDone?: bool }
+ */
+export async function updateTopicStatus(chapterDocId, slug, update) {
+  const ref = topicRef(chapterDocId, slug);
+  const payload = { updatedAt: now() };
+
+  if (typeof update.studied === 'boolean') {
+    payload.studied    = update.studied;
+    payload.studiedAt  = update.studied ? now() : null;
+  }
+
+  if (update.revisionLevel != null) {
+    const key = String(update.revisionLevel);
+    payload[`revisions.${key}`] = update.revisionDone ? now() : null;
+  }
+
+  await setDoc(ref, payload, { merge: true });
+}
+
+/**
+ * Seed topics for a chapter from static TOPIC_DATA.
+ * Called once when a chapter is first expanded.
+ * merge:true ensures existing progress is preserved.
+ *
+ * legacyStatus: optional — if chapter has old status ('completed', 'revised_N')
+ *               auto-populate studied=true (and revisions for revised_N).
+ */
+export async function seedTopicsForChapter(chapterDocId, topics, legacyStatus) {
+  if (!topics || topics.length === 0) return;
+
+  // Determine legacy fill values
+  let legacyStudied   = false;
+  let legacyRevCount  = 0;
+
+  if (legacyStatus === 'completed') {
+    legacyStudied = true;
+  } else if (legacyStatus?.startsWith('revised')) {
+    legacyStudied  = true;
+    const match    = legacyStatus.match(/revised_?(\d)/);
+    legacyRevCount = match ? parseInt(match[1], 10) : 1;
+  }
+
+  const batch = writeBatch(db);
+
+  topics.forEach((topic, idx) => {
+    const ref = topicRef(chapterDocId, topic.slug);
+
+    const revisions = {};
+    if (legacyRevCount >= 1) revisions['1'] = serverTimestamp();
+    if (legacyRevCount >= 2) revisions['2'] = serverTimestamp();
+    if (legacyRevCount >= 3) revisions['3'] = serverTimestamp();
+
+    // Only set default values — merge keeps existing progress intact
+    batch.set(ref, {
+      slug:        topic.slug,
+      topicName:   topic.name,
+      topicIndex:  idx,
+      type:        topic.type,
+      studied:     legacyStudied,
+      studiedAt:   legacyStudied ? serverTimestamp() : null,
+      revisions,
+      updatedAt:   serverTimestamp(),
+    }, { merge: true });
+  });
+
+  await batch.commit();
+}
+
+/**
+ * Real-time listener for all topics of a chapter.
+ * Returns unsubscribe function.
+ *
+ * @param {string}   chapterDocId
+ * @param {function} callback  - called with { [slug]: topicDoc } map on every update
+ */
+export function subscribeTopicProgress(chapterDocId, callback) {
+  const q = query(topicsCol(chapterDocId), orderBy('topicIndex', 'asc'));
+  return onSnapshot(q, snap => {
+    const map = {};
+    snap.docs.forEach(d => { map[d.id] = d.data(); });
+    callback(map);
+  });
+}
+
+/**
+ * Batch-fetch topic progress for multiple chapters at once.
+ * Used for subject/overall aggregate calculation.
+ *
+ * @param {string[]} chapterDocIds
+ * @returns {Promise<{ [chapterDocId]: { [slug]: topicDoc } }>}
+ */
+export async function batchGetTopicProgress(chapterDocIds) {
+  const results = {};
+  await Promise.all(
+    chapterDocIds.map(async id => {
+      results[id] = await getTopicProgress(id);
+    })
+  );
+  return results;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ROUTINE DEFINITIONS  (weekly / daily / once recurring check-in sessions)
+// Stored at: users/{uid}/routineDefinitions/{id}
+// Schema:
+//   title, subject, chapter, topic, daysOfWeek: string[],
+//   startTime: 'HH:MM', durationMinutes: number, reminderMinutes: number,
+//   repeat: 'weekly'|'daily'|'once', specificDate?: string,
+//   isActive: boolean, createdAt, updatedAt
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const routineDefsCol = (uid) => collection(db, 'users', uid, 'routineDefinitions');
+
+export async function createRoutineDefinition(userId, data) {
+  const docRef = await addDoc(routineDefsCol(userId), {
+    ...data, userId, isActive: true, createdAt: now(), updatedAt: now(),
+  });
+  return docRef.id;
+}
+
+export async function getRoutineDefinitions(userId) {
+  const snap = await getDocs(routineDefsCol(userId));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function subscribeToRoutineDefinitions(userId, callback) {
+  return onSnapshot(routineDefsCol(userId), snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function updateRoutineDefinition(userId, defId, data) {
+  await setDoc(
+    doc(db, 'users', userId, 'routineDefinitions', defId),
+    { ...data, updatedAt: now() },
+    { merge: true }
+  );
+}
+
+export async function deleteRoutineDefinition(userId, defId) {
+  await deleteDoc(doc(db, 'users', userId, 'routineDefinitions', defId));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SESSION LOGS  (per-occurrence history for routine definitions)
+// Stored at: users/{uid}/sessionLogs/{logId}
+// ID format: routine_{defId}_{date}  — deterministic, prevents duplicate logs
+// Schema:
+//   routineDefinitionId, date, subject, chapter, topic, title,
+//   startTime, durationMinutes, status (completed|missed|skipped|cancelled|in_progress),
+//   startedAt?: ISO string, completedAt?: ISO string,
+//   actualDurationMinutes?: number, notes?, userId, updatedAt
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const sessionLogsCol = (uid) => collection(db, 'users', uid, 'sessionLogs');
+
+export function getSessionLogId(routineDefId, date) {
+  return `routine_${routineDefId}_${date}`;
+}
+
+export async function saveSessionLog(userId, data) {
+  // data must include: routineDefinitionId, date, status
+  const logId = getSessionLogId(data.routineDefinitionId, data.date);
+  await setDoc(
+    doc(db, 'users', userId, 'sessionLogs', logId),
+    { ...data, userId, updatedAt: now() },
+    { merge: true }
+  );
+  return logId;
+}
+
+export async function getSessionLog(userId, routineDefId, date) {
+  const logId = getSessionLogId(routineDefId, date);
+  const snap = await getDoc(doc(db, 'users', userId, 'sessionLogs', logId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function getSessionLogsByDateRange(userId, startDate, endDate) {
+  const q = query(
+    sessionLogsCol(userId),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+    orderBy('date', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function subscribeToSessionLogs(userId, callback, days = 90) {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const startDate = getBSTDateString(cutoff);
+  const q = query(
+    sessionLogsCol(userId),
+    where('date', '>=', startDate),
+    orderBy('date', 'desc')
+  );
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CHECK-IN CENTER STATISTICS
+// Aggregates from sessionLogs + schedule entries (for one-offs)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export async function getCheckinCenterStats(userId, days = 30) {
+  const today     = getBSTDateString();
+  const cutoff    = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const startDate = getBSTDateString(cutoff);
+
+  // Parallel fetch
+  const [logs, schedSnap, routineDefs] = await Promise.all([
+    getSessionLogsByDateRange(userId, startDate, today),
+    getDocs(query(
+      collection(db, 'users', userId, 'schedule'),
+      where('date', '>=', startDate),
+      orderBy('date', 'desc')
+    )),
+    getRoutineDefinitions(userId),
+  ]);
+
+  const schedEntries = schedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // Combine records: session logs + resolved (non-pending) schedule entries
+  const allRecords = [
+    ...logs,
+    ...schedEntries.filter(e => e.status === 'completed' || e.status === 'missed' || e.status === 'skipped'),
+  ];
+
+  const total     = allRecords.length;
+  const completed = allRecords.filter(r => r.status === 'completed').length;
+  const missed    = allRecords.filter(r => r.status === 'missed').length;
+  const skipped   = allRecords.filter(r => r.status === 'skipped').length;
+  const cancelled = allRecords.filter(r => r.status === 'cancelled').length;
+
+  // Subject-wise breakdown
+  const bySubject = {};
+  allRecords.forEach(r => {
+    const subj = r.subject;
+    if (!subj) return;
+    if (!bySubject[subj]) bySubject[subj] = { completed: 0, missed: 0, skipped: 0, total: 0 };
+    bySubject[subj].total++;
+    if (r.status === 'completed') bySubject[subj].completed++;
+    else if (r.status === 'missed') bySubject[subj].missed++;
+    else if (r.status === 'skipped') bySubject[subj].skipped++;
+  });
+  // Compute completion rate per subject
+  Object.values(bySubject).forEach(s => {
+    s.rate = s.total > 0 ? Math.round((s.completed / s.total) * 100) : 0;
+  });
+
+  // Time stats
+  const plannedMinutes = allRecords.reduce((s, r) => s + (r.durationMinutes || 0), 0);
+  const actualMinutes  = allRecords
+    .filter(r => r.status === 'completed')
+    .reduce((s, r) => s + (r.actualDurationMinutes || r.durationMinutes || 0), 0);
+
+  // ── Streak calculation (backwards from yesterday) ─────────────────────────
+  // Rules:
+  //   - Day with ≥1 completion → streak continues
+  //   - Day with scheduled sessions but 0 completions → streak breaks
+  //   - Day with NO scheduled sessions at all → neutral (skip, doesn't break streak)
+  const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  
+  let streak     = 0;
+  let bestStreak = 0;
+  let tempStreak = 0;
+  let streakBroken = false;
+
+  for (let i = 1; i <= Math.min(days, 90); i++) {
+    const d        = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const date     = getBSTDateString(d);
+    const dayName  = DAYS[d.getUTCDay()];
+
+    if (streakBroken) break;
+
+    // Completions on this day
+    const dayCompleted = allRecords.filter(r => r.date === date && r.status === 'completed').length;
+    if (dayCompleted > 0) {
+      tempStreak++;
+      bestStreak = Math.max(bestStreak, tempStreak);
+      continue;
+    }
+
+    // Was anything scheduled for this day?
+    const hadRoutine  = routineDefs.some(def =>
+      def.isActive && (def.daysOfWeek || []).includes(dayName)
+    );
+    const hadOneOff   = schedEntries.some(e => e.date === date);
+
+    if (hadRoutine || hadOneOff) {
+      // Sessions scheduled but nothing completed → break
+      streakBroken = true;
+    }
+    // Else: nothing scheduled → neutral, keep looking back
+  }
+  streak = streakBroken ? 0 : tempStreak;
+
+  // Weekly heatmap (last 7 days)
+  const weeklyMatrix = [];
+  for (let i = 6; i >= 0; i--) {
+    const d        = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const date     = getBSTDateString(d);
+    const dayLabel = DAYS[d.getUTCDay()].slice(0, 3);
+    const dayLogs  = allRecords.filter(r => r.date === date);
+    weeklyMatrix.push({
+      date, dayLabel,
+      completed: dayLogs.filter(r => r.status === 'completed').length,
+      missed:    dayLogs.filter(r => r.status === 'missed').length,
+      total:     dayLogs.length,
+    });
+  }
+
+  return {
+    total, completed, missed, skipped, cancelled,
+    completionRate: total > 0 ? Math.round((completed / total) * 100) : 0,
+    missRate:       total > 0 ? Math.round((missed    / total) * 100) : 0,
+    bySubject,
+    plannedMinutes, actualMinutes,
+    streak, bestStreak: Math.max(bestStreak, streak),
+    weeklyMatrix,
+  };
+}

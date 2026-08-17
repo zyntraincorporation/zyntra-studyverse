@@ -10,6 +10,8 @@
 [functions]
   directory = "../netlify/functions"
   node_bundler = "esbuild"
+  # firebase-admin has native modules — keep it as require() at runtime
+  external_node_modules = ["firebase-admin"]
 
 # SPA redirect — all routes go to index.html
 [[redirects]]

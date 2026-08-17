@@ -12,11 +12,11 @@ import { useCheckinAlerts } from './hooks/useCheckinAlerts';
 import AppLayout       from './components/layout/AppLayout';
 import LoginPage       from './pages/LoginPage';
 import DashboardPage   from './features/dashboard/DashboardPage';
-import CheckinPage     from './pages/CheckinPage';
+import CheckInCenterPage from './pages/CheckInCenterPage';
 import TimerPage       from './pages/TimerPage';
 import StatsPage       from './pages/StatsPage';
 import ChaptersPage    from './pages/ChaptersPage';
-import AIReportPage    from './pages/AIReportPage';
+import AIMentorPage    from './pages/AIMentorPage';
 import RevisionPage    from './pages/RevisionPage';
 import NotesPage       from './pages/NotesPage';
 import MistakePage     from './pages/MistakePage';
@@ -24,7 +24,7 @@ import RoutinePage     from './pages/RoutinePage';
 import VocabularyPage  from './pages/VocabularyPage';
 import ChatPage        from './features/chat/ChatPage';
 import LeaderboardPage from './features/leaderboard/LeaderboardPage';
-import CheckinHistoryPage from './pages/CheckinHistoryPage';
+// CheckinHistoryPage merged into CheckInCenterPage — /checkins-history redirects to /checkin
 import Toast           from './components/ui/Toast';
 
 // ── Auth guard ────────────────────────────────────────────────────────────────
@@ -142,11 +142,11 @@ export default function App() {
           }
         >
           <Route index                  element={<DashboardPage />}   />
-          <Route path="checkin"         element={<CheckinPage />}     />
+          <Route path="checkin"         element={<CheckInCenterPage />} />
           <Route path="timer"           element={<TimerPage />}       />
           <Route path="stats"           element={<StatsPage />}       />
           <Route path="chapters"        element={<ChaptersPage />}    />
-          <Route path="ai"              element={<AIReportPage />}    />
+          <Route path="ai"              element={<AIMentorPage />}    />
           <Route path="revision"        element={<RevisionPage />}    />
           <Route path="notes"           element={<NotesPage />}       />
           <Route path="mistakes"        element={<MistakePage />}     />
@@ -154,7 +154,7 @@ export default function App() {
           <Route path="vocabulary"      element={<VocabularyPage />}  />
           <Route path="chat"            element={<ChatPage />}        />
           <Route path="leaderboard"     element={<LeaderboardPage />} />
-          <Route path="checkins-history" element={<CheckinHistoryPage />} />
+          <Route path="checkins-history" element={<Navigate to="/checkin" replace />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

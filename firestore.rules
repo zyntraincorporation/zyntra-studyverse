@@ -26,6 +26,20 @@ service cloud.firestore {
       match /schedule/{docId} {
         allow read, write: if isOwner(userId);
       }
+
+      // ── AI Mentor subcollections ─────────────────────────────────────────────
+      match /mentorAnalysis/{date} {
+        allow read, write: if isOwner(userId);
+      }
+      match /mentorChats/{date} {
+        allow read, write: if isOwner(userId);
+      }
+      match /mentorUsage/{date} {
+        allow read, write: if isOwner(userId);
+      }
+      match /mentorMemory/{docId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────
@@ -43,8 +57,14 @@ service cloud.firestore {
 
     // ── Chapters ──────────────────────────────────────────────────────────────
     match /chapters/{docId} {
-      allow read:   if isAuthed() && resource.data.userId == uid();
-      allow write:  if isCoupleUser();
+      allow read:   if isAuthed() && (resource.data.userId == uid() || isCoupleUser());
+      allow write:  if isAuthed() && (request.resource.data.userId == uid() || isCoupleUser() || (resource != null && resource.data.userId == uid()));
+
+      // ── Topics subcollection (per-chapter topic progress) ─────────────────
+      match /topics/{topicId} {
+        allow read:  if isAuthed() && (get(/databases/$(database)/documents/chapters/$(docId)).data.userId == uid() || isCoupleUser());
+        allow write: if isAuthed() && (get(/databases/$(database)/documents/chapters/$(docId)).data.userId == uid() || isCoupleUser());
+      }
     }
 
     // ── Revisions ─────────────────────────────────────────────────────────────
@@ -113,11 +133,6 @@ service cloud.firestore {
     match /notifications/{userId}/items/{notifId} {
       allow read, write: if isOwner(userId);
     }
-
-    // ── Emergency Chat Access ─────────────────────────────────────────────────
-    // emergencyActivatedAt is stored as a field on the user document (users/{userId}).
-    // No separate emergencyChat collection needed.
-    // Access is granted via the users/{userId} write rule above (isOwner).
 
   }
 }

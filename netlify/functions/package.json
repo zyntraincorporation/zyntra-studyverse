@@ -4,6 +4,7 @@
   "description": "Netlify serverless functions for ZYNTRA StudyVerse",
   "type": "commonjs",
   "dependencies": {
-    "google-auth-library": "^9.0.0"
+    "google-auth-library": "^9.0.0",
+    "firebase-admin": "^12.0.0"
   }
 }

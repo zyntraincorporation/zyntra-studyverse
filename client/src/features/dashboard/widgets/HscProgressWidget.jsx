@@ -105,7 +105,10 @@ export default function HscProgressWidget() {
     getChapters(uid).then(all => {
       setChapters(all);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => {
+      console.error('[HscProgressWidget] getChapters error:', err);
+      setLoading(false);
+    });
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);

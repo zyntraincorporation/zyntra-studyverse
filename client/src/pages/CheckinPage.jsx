@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
 import {
   getTodaySessions, saveSession, getTodayStudyMinutes,
-  recalculateAndSaveLeaderboard, updateChatStudyMinutes,
+  recalculateAndSaveLeaderboard,
   createScheduleEntry, getScheduleEntries,
   updateScheduleEntry, deleteScheduleEntry,
   updatePresence,
@@ -63,8 +63,6 @@ function SessionCard({ sessionNumber, subjects, slotMeta, log, today, uid, displ
         completed: true, durationMinutes: defaultMinutes,
       });
       await recalculateAndSaveLeaderboard(uid, displayName);
-      const mins = await getTodayStudyMinutes(uid);
-      await updateChatStudyMinutes(uid, displayName, mins);
       toast('Session marked completed! 🎉', 'success');
       onSaved();
     } catch { toast('Failed to save session', 'error'); }
@@ -236,8 +234,6 @@ function PracticeLogger({ today, uid, displayName, existingCustomMinutes, onSave
         durationMinutes: mins, completed: true, notes,
       });
       await recalculateAndSaveLeaderboard(uid, displayName);
-      const minsObj = await getTodayStudyMinutes(uid);
-      await updateChatStudyMinutes(uid, displayName, minsObj);
       toast(`Practice session logged! 💪`, 'success');
       setSubject(''); setMinutes(''); setNotes('');
       onSaved();

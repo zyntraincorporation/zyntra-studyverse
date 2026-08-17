@@ -6,9 +6,8 @@ export const COUPLE_CONFIG = {
   saifulEmail:           'saifulislamnirob45@gmail.com',
   shahinurEmail:         'shahinurislamliza2@gmail.com', // display name: Shahinur
   chatRoomId:            'zyntra-main-chat',
-  chatUnlockMinutes:     180,  // 3 hours
-  chatUnlockVocab:       20,   // 20 vocabulary words
-  chatWindowMinutes:     60,   // 1-hour chat window after unlock
+  chatUnlockVocab:       20,   // 20 vocabulary words per user per day
+  chatWindowMinutes:     45,   // 45-minute shared chat session
   messageTTLMs:          3 * 24 * 60 * 60 * 1000, // 3 days in ms
 };
 
