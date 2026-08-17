@@ -17,7 +17,7 @@ import { ChatHistoryPanel, HistoryChatView } from '../components/ai/ChatHistoryP
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'analysis', label: 'Analysis',  Icon: BarChart2    },
+  { id: 'analysis', label: 'Analysis',  Icon: BarChart2     },
   { id: 'chat',     label: 'Chat',      Icon: MessageSquare },
   { id: 'history',  label: 'History',   Icon: History       },
 ];
@@ -100,19 +100,20 @@ export default function AIMentorPage() {
   const { user } = useAuthStore();
   const uid      = user?.uid;
 
-  const [activeTab,      setActiveTab]      = useState('analysis');
-  const [context,        setContext]        = useState(null);
-  const [contextLoading, setContextLoading] = useState(true);
-  const [analysis,       setAnalysis]       = useState(null);
-  const [analysisLoading,setAnalysisLoading]= useState(true);
-  const [isRefreshing,   setIsRefreshing]   = useState(false);
-  const [usage,          setUsage]          = useState(null);
-  const [historyDates,   setHistoryDates]   = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [selectedDate,   setSelectedDate]   = useState(null);
-  const [historyMessages,setHistoryMessages]= useState([]);
-  const [historyMsgLoad, setHistoryMsgLoad] = useState(false);
-  const [pageError,      setPageError]      = useState('');
+  const [activeTab,       setActiveTab]       = useState('analysis');
+  const [context,         setContext]         = useState(null);
+  const [contextLoading,  setContextLoading]  = useState(true);
+  const [analysis,        setAnalysis]        = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(true);
+  const [isRefreshing,    setIsRefreshing]    = useState(false);
+  const [usage,           setUsage]           = useState(null);
+  const [historyDates,    setHistoryDates]    = useState([]);
+  const [historyLoading,  setHistoryLoading]  = useState(false);
+  const [selectedDate,    setSelectedDate]    = useState(null);
+  const [historyMessages, setHistoryMessages] = useState([]);
+  const [historyMsgLoad,  setHistoryMsgLoad]  = useState(false);
+  const [pageError,       setPageError]       = useState('');
+  const [todayMessages,   setTodayMessages]   = useState([]);
 
   const today = getBSTDateString();
 
@@ -132,94 +133,92 @@ export default function AIMentorPage() {
 
   // ── Load cached analysis ──────────────────────────────────────────────────
   const loadAnalysis = useCallback(async () => {
+    if (!uid) return;
     try {
       setAnalysisLoading(true);
-      const data = await getCachedAnalysis();
+      const data = await getCachedAnalysis(uid);
       setAnalysis(data.analysis || null);
     } catch (e) {
       console.error('Analysis load failed:', e);
     } finally {
       setAnalysisLoading(false);
     }
-  }, []);
+  }, [uid]);
 
   // ── Load chat usage ───────────────────────────────────────────────────────
   const loadUsage = useCallback(async () => {
+    if (!uid) return;
     try {
-      const data = await getChatUsage();
+      const data = await getChatUsage(uid);
       setUsage(data);
     } catch (e) {
       console.error('Usage load failed:', e);
     }
-  }, []);
+  }, [uid]);
 
   // ── Load history dates ────────────────────────────────────────────────────
   const loadHistoryDates = useCallback(async () => {
+    if (!uid) return;
     try {
       setHistoryLoading(true);
-      const data = await getChatHistoryDates();
+      const data = await getChatHistoryDates(uid);
       setHistoryDates(data.dates || []);
     } catch (e) {
       console.error('History dates load failed:', e);
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [uid]);
 
   // ── Load specific day's chat ──────────────────────────────────────────────
   const loadHistoryDay = useCallback(async (date) => {
+    if (!uid) return;
     setSelectedDate(date);
     setHistoryMsgLoad(true);
     try {
-      const data = await getChatHistory(date);
+      const data = await getChatHistory(uid, date);
       setHistoryMessages(data.messages || []);
     } catch (e) {
       console.error('History load failed:', e);
     } finally {
       setHistoryMsgLoad(false);
     }
-  }, []);
+  }, [uid]);
 
-  // ── Generate/refresh analysis ─────────────────────────────────────────────
+  // ── Generate/refresh analysis (MANUAL ONLY) ───────────────────────────────
   const handleRefreshAnalysis = useCallback(async (force = false) => {
-    if (isRefreshing) return;
+    if (!uid || isRefreshing) return;
     setPageError('');
     setIsRefreshing(true);
     try {
-      const data = await generateAnalysis(force);
+      const data = await generateAnalysis(uid, force);
       setAnalysis(data.analysis);
     } catch (e) {
-      setPageError('Analysis generate করতে সমস্যা হয়েছে। পরে আবার চেষ্টা করো।');
+      console.error('Analysis generation failed:', e);
+      setPageError(e.message || 'Analysis generate করতে সমস্যা হয়েছে। পরে আবার চেষ্টা করো।');
     } finally {
       setIsRefreshing(false);
     }
-  }, [isRefreshing]);
+  }, [uid, isRefreshing]);
 
   // ── Tab switch side effects ───────────────────────────────────────────────
   useEffect(() => {
-    if (activeTab === 'history' && historyDates.length === 0) loadHistoryDates();
-  }, [activeTab]);
+    if (activeTab === 'history' && historyDates.length === 0) {
+      loadHistoryDates();
+    }
+  }, [activeTab, historyDates.length, loadHistoryDates]);
 
   // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
-    loadContext();
-    loadAnalysis();
-    loadUsage();
-  }, [uid]);
-
-  // Auto-generate if no analysis today
-  useEffect(() => {
-    if (!analysisLoading && !analysis && !isRefreshing && context) {
-      handleRefreshAnalysis(false);
+    if (uid) {
+      loadContext();
+      loadAnalysis();
+      loadUsage();
+      getChatHistory(uid, today)
+        .then(d => setTodayMessages(d.messages || []))
+        .catch(() => {});
     }
-  }, [analysisLoading, analysis, context]);
-
-  // ── Today's chat messages (for the chat tab) ──────────────────────────────
-  const [todayMessages, setTodayMessages] = useState([]);
-  useEffect(() => {
-    if (!uid) return;
-    getChatHistory(today).then(d => setTodayMessages(d.messages || [])).catch(() => {});
-  }, [uid]);
+  }, [uid, today, loadContext, loadAnalysis, loadUsage]);
 
   return (
     <div className="min-h-screen bg-[#080b14] text-white flex flex-col">
@@ -227,15 +226,30 @@ export default function AIMentorPage() {
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="px-4 pt-6 pb-4 border-b border-white/[0.06]">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500/25 to-blue-600/25
-                            border border-cyan-500/25 flex items-center justify-center">
-              <Bot size={18} className="text-cyan-400" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500/25 to-blue-600/25
+                              border border-cyan-500/25 flex items-center justify-center">
+                <Bot size={18} className="text-cyan-400" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white leading-none">AI Mentor</h1>
+                <p className="text-xs text-slate-500 mt-0.5">BUET preparation · Personal guide</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-white leading-none">AI Mentor</h1>
-              <p className="text-xs text-slate-500 mt-0.5">BUET preparation · Personal guide</p>
-            </div>
+
+            {/* Quick action button for analysis tab */}
+            {activeTab === 'analysis' && analysis && (
+              <button
+                onClick={() => handleRefreshAnalysis(true)}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08]
+                           text-xs text-slate-400 hover:text-cyan-300 hover:border-cyan-500/30 transition-all disabled:opacity-40"
+              >
+                <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} />
+                {isRefreshing ? 'Analyzing…' : 'Refresh'}
+              </button>
+            )}
           </div>
 
           {/* Error banner */}
@@ -248,8 +262,8 @@ export default function AIMentorPage() {
                 className="mt-3 flex items-center gap-2 text-xs text-amber-400
                            bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5"
               >
-                <AlertTriangle size={12} />
-                {pageError}
+                <AlertTriangle size={14} className="shrink-0" />
+                <span>{pageError}</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -281,7 +295,7 @@ export default function AIMentorPage() {
 
           {/* ── ANALYSIS TAB ──────────────────────────────────────────────── */}
           {activeTab === 'analysis' && (
-            <div className="h-full overflow-y-auto px-4 py-4">
+            <div className="h-full overflow-y-auto px-4 py-4 space-y-4">
               <ContextSummaryCard context={context} loading={contextLoading} />
               <MentorAnalysisCard
                 analysis={analysis}
@@ -296,6 +310,7 @@ export default function AIMentorPage() {
           {activeTab === 'chat' && (
             <div className="h-full flex flex-col" style={{ height: 'calc(100vh - 140px)' }}>
               <MentorChat
+                userId={uid}
                 usage={usage}
                 onUsageUpdate={setUsage}
                 fullContext={context}

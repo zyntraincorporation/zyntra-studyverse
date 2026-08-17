@@ -7,11 +7,11 @@ import { setDailyLimit, sendChatMessage, buildChatContextSummary } from '../../l
 // ─────────────────────────────────────────────────────────────────────────────
 // MentorChat
 // Full interactive chat interface with:
-//   - Daily question limit enforcement (server-side)
+//   - Daily question limit enforcement
 //   - Limit setup modal on first open
 //   - Typing indicator
 //   - Quick suggestion chips
-//   - Message history in current session
+//   - Direct Firestore message persistence
 // ─────────────────────────────────────────────────────────────────────────────
 
 const QUICK_SUGGESTIONS = [
@@ -24,7 +24,7 @@ const QUICK_SUGGESTIONS = [
 ];
 
 // ── Message bubble ────────────────────────────────────────────────────────────
-function MessageBubble({ msg, idx }) {
+function MessageBubble({ msg }) {
   const isUser = msg.role === 'user';
   return (
     <motion.div
@@ -86,16 +86,23 @@ function TypingIndicator() {
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisText, initialMessages = [] }) {
-  const [messages,     setMessages]     = useState(initialMessages);
-  const [input,        setInput]        = useState('');
-  const [sending,      setSending]      = useState(false);
-  const [showModal,    setShowModal]    = useState(false);
-  const [error,        setError]        = useState('');
+export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAnalysisText, initialMessages = [] }) {
+  const [messages,   setMessages]   = useState(initialMessages);
+  const [input,      setInput]      = useState('');
+  const [sending,    setSending]    = useState(false);
+  const [showModal,  setShowModal]  = useState(false);
+  const [error,      setError]      = useState('');
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  // Show limit modal if limit not yet set for today
+  // Sync initial messages when they load
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      setMessages(initialMessages);
+    }
+  }, [initialMessages]);
+
+  // Show limit modal if limit not yet set for today and user has no questions used
   useEffect(() => {
     if (usage && !usage.limitSet && usage.questionsUsed === 0) {
       setShowModal(true);
@@ -114,10 +121,11 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
   const limitReached  = !isUnlimited && isLimitSet && questionsUsed >= Number(dailyLimit);
 
   // Handle limit selection from modal
-  const handleLimitSelect = async (limit) => {
+  const handleLimitSelect = async (limitVal) => {
+    if (!userId) return;
     try {
-      await setDailyLimit(limit);
-      onUsageUpdate({ questionsUsed: 0, dailyLimit: limit, limitSet: true });
+      await setDailyLimit(userId, limitVal);
+      onUsageUpdate({ questionsUsed: 0, dailyLimit: limitVal, limitSet: true });
       setShowModal(false);
       inputRef.current?.focus();
     } catch (e) {
@@ -127,7 +135,7 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
 
   // Send message
   const handleSend = async (text = input.trim()) => {
-    if (!text || sending || limitReached) return;
+    if (!userId || !text || sending || limitReached) return;
     setInput('');
     setError('');
 
@@ -136,15 +144,13 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
     setSending(true);
 
     try {
-      // Build lightweight context for the chat API
       const contextSummary = buildChatContextSummary(fullContext, todayAnalysisText);
-
-      const data = await sendChatMessage(text, messages, contextSummary);
+      const data = await sendChatMessage(userId, text, messages, contextSummary);
 
       const assistantMsg = { role: 'assistant', content: data.response, timestamp: data.timestamp };
       setMessages(prev => [...prev, assistantMsg]);
 
-      // Update usage counter
+      // Update usage counter in state
       onUsageUpdate({
         ...usage,
         questionsUsed: data.questionsUsed,
@@ -152,10 +158,10 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
         limitSet:      true,
       });
     } catch (e) {
-      if (e.status === 429) {
+      if (e.status === 429 || e.message?.includes('limit')) {
         setError('আজকের question limit শেষ। কাল আবার চেষ্টা করো।');
       } else {
-        setError('কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করো।');
+        setError(e.message || 'কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করো।');
       }
       // Remove optimistic user message on failure
       setMessages(prev => prev.filter(m => m !== userMsg));
@@ -184,7 +190,7 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
             : 'bg-white/[0.04] border-white/[0.08] text-slate-400'}`}
       >
         {limitReached ? <Lock size={10} /> : <Sparkles size={10} />}
-        {isUnlimited ? '∞' : `${questionsUsed} / ${dailyLimit}`}
+        {isUnlimited ? '∞ Questions' : `${questionsUsed} / ${dailyLimit}`}
       </div>
     );
   };
@@ -237,7 +243,7 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
         )}
 
         {/* Messages */}
-        {messages.map((msg, i) => <MessageBubble key={i} msg={msg} idx={i} />)}
+        {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
 
         {/* Typing indicator */}
         {sending && <TypingIndicator />}
@@ -252,8 +258,8 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
               className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10
                          border border-red-500/20 rounded-xl px-3 py-2.5"
             >
-              <AlertCircle size={12} />
-              {error}
+              <AlertCircle size={12} className="shrink-0" />
+              <span>{error}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -298,7 +304,6 @@ export function MentorChat({ usage, onUsageUpdate, fullContext, todayAnalysisTex
                 value={input}
                 onChange={e => {
                   setInput(e.target.value);
-                  // Auto-resize
                   e.target.style.height = 'auto';
                   e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
                 }}
