@@ -106,7 +106,7 @@ function FCMForegroundListener() {
           // Navigate to chat when a chat notification is clicked
           n.onclick = () => {
             window.focus();
-            if (data.type === 'chat_message' || data.type === 'emergency_chat') {
+            if (data.type === 'chat_message') {
               navigate('/chat');
             }
             n.close();

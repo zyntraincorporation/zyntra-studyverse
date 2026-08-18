@@ -482,22 +482,18 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
                         {msg.mediaUrl ? (
                           <div className="flex flex-col gap-1">
                             <MediaMessage url={msg.mediaUrl} type={msg.mediaType} />
-                            {isMe && (
-                              <div className="flex justify-end gap-1 text-[9px] items-center">
-                                {formatTime(msg.createdAt)}
-                                {statusIcon}
-                              </div>
-                            )}
+                            <div className={`flex justify-end gap-1 text-[9px] items-center ${isMe ? '' : 'text-slate-500'}`}>
+                              {formatTime(msg.createdAt)}
+                              {isMe && statusIcon}
+                            </div>
                           </div>
                         ) : (
                           <p className="text-sm leading-relaxed whitespace-pre-wrap flex items-end justify-between gap-3 min-w-[60px]">
                             <span>{msg.text}</span>
-                            {isMe && (
-                              <span className="text-[9px] translate-y-1 inline-flex items-center shrink-0">
-                                {formatTime(msg.createdAt)}
-                                {statusIcon}
-                              </span>
-                            )}
+                            <span className={`text-[9px] translate-y-1 inline-flex items-center shrink-0 ${isMe ? '' : 'text-slate-500'}`}>
+                              {formatTime(msg.createdAt)}
+                              {isMe && statusIcon}
+                            </span>
                           </p>
                         )}
 

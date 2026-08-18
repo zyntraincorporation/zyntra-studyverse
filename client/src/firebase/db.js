@@ -40,7 +40,8 @@ export async function findUserByEmail(email) {
   const q    = query(col('users'), where('email', '==', email), limit(1));
   const snap = await getDocs(q);
   if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+  const d = snap.docs[0];
+  return { id: d.id, uid: d.id, ...d.data() };
 }
 
 export async function saveWidgetLayout(uid, layout) {
@@ -641,61 +642,120 @@ export function subscribeToPartnerPresence(partnerId, callback) {
 export function subscribeToMessages(callback, limitCount = 60) {
   const q = query(
     collection(db, 'chat', chatRoomId, 'messages'),
-    orderBy('createdAt', 'asc'),
+    orderBy('createdAt', 'desc'),
     limit(limitCount)
   );
   return onSnapshot(q, { includeMetadataChanges: false }, snap => {
-    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
     callback(msgs);
   });
 }
 
-export function subscribeToTodayVocabCount(userId, callback) {
-  // Use BST-aware midnight so words added on the BST calendar day are counted
-  // regardless of the device's local timezone.
+// ── BST day boundary helper (shared by both vocab count subscriptions) ──────
+function getBSTDayBounds() {
   const BST_OFFSET_MS = 6 * 60 * 60 * 1000;
   const nowInBST = new Date(Date.now() + BST_OFFSET_MS);
-  // BST midnight as a UTC-based Date
   const bstMidnightUTC = new Date(
     Date.UTC(nowInBST.getUTCFullYear(), nowInBST.getUTCMonth(), nowInBST.getUTCDate())
     - BST_OFFSET_MS
   );
-  // BST end-of-day (23:59:59.999 BST)
   const bstEndOfDayUTC = new Date(bstMidnightUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-  const q = query(
-    vocabWordsCol(userId),
-    where('createdAt', '>=', Timestamp.fromDate(bstMidnightUTC)),
-    where('createdAt', '<=', Timestamp.fromDate(bstEndOfDayUTC))
-  );
-
-  return onSnapshot(q, snap => {
-    callback(snap.size);
-  });
+  return { bstMidnightUTC, bstEndOfDayUTC };
 }
 
 /**
- * Subscribes to a partner's today vocabulary count (BST-aware).
- * Used by the unlock gate to check if the partner has also reached 20 vocab.
+ * Counts today's vocabulary for a user.
+ * Counts: words CREATED today  UNION  words REVIEWED today (by distinct wordId).
+ * Uses two parallel onSnapshot listeners whose results are merged.
+ * This ensures Recall Arena / SmartRevision practice also counts toward the 20-word gate.
+ */
+export function subscribeToTodayVocabCount(userId, callback) {
+  const { bstMidnightUTC, bstEndOfDayUTC } = getBSTDayBounds();
+  const midTs = Timestamp.fromDate(bstMidnightUTC);
+  const endTs = Timestamp.fromDate(bstEndOfDayUTC);
+
+  let wordsCreatedToday = new Set();   // doc IDs of words created today
+  let wordsReviewedToday = new Set();  // wordIds reviewed today
+
+  const emit = () => {
+    const union = new Set([...wordsCreatedToday, ...wordsReviewedToday]);
+    callback(union.size);
+  };
+
+  // Listener 1: words created today
+  const unsubWords = onSnapshot(
+    query(
+      vocabWordsCol(userId),
+      where('createdAt', '>=', midTs),
+      where('createdAt', '<=', endTs)
+    ),
+    snap => {
+      wordsCreatedToday = new Set(snap.docs.map(d => d.id));
+      emit();
+    },
+    () => {}
+  );
+
+  // Listener 2: reviews done today (each review has a wordId field)
+  const unsubReviews = onSnapshot(
+    query(
+      vocabReviewCol(userId),
+      where('reviewedAt', '>=', midTs),
+      where('reviewedAt', '<=', endTs)
+    ),
+    snap => {
+      wordsReviewedToday = new Set(snap.docs.map(d => d.data().wordId).filter(Boolean));
+      emit();
+    },
+    () => {}
+  );
+
+  return () => { unsubWords(); unsubReviews(); };
+}
+
+/**
+ * Counts today's vocabulary for a partner user (same dual-listener logic).
  */
 export function subscribeToPartnerVocabCount(partnerUid, callback) {
-  const BST_OFFSET_MS = 6 * 60 * 60 * 1000;
-  const nowInBST = new Date(Date.now() + BST_OFFSET_MS);
-  const bstMidnightUTC = new Date(
-    Date.UTC(nowInBST.getUTCFullYear(), nowInBST.getUTCMonth(), nowInBST.getUTCDate())
-    - BST_OFFSET_MS
-  );
-  const bstEndOfDayUTC = new Date(bstMidnightUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const { bstMidnightUTC, bstEndOfDayUTC } = getBSTDayBounds();
+  const midTs = Timestamp.fromDate(bstMidnightUTC);
+  const endTs = Timestamp.fromDate(bstEndOfDayUTC);
 
-  const q = query(
-    collection(db, 'vocabulary', partnerUid, 'words'),
-    where('createdAt', '>=', Timestamp.fromDate(bstMidnightUTC)),
-    where('createdAt', '<=', Timestamp.fromDate(bstEndOfDayUTC))
+  let wordsCreatedToday  = new Set();
+  let wordsReviewedToday = new Set();
+
+  const emit = () => {
+    const union = new Set([...wordsCreatedToday, ...wordsReviewedToday]);
+    callback(union.size);
+  };
+
+  const unsubWords = onSnapshot(
+    query(
+      collection(db, 'vocabulary', partnerUid, 'words'),
+      where('createdAt', '>=', midTs),
+      where('createdAt', '<=', endTs)
+    ),
+    snap => {
+      wordsCreatedToday = new Set(snap.docs.map(d => d.id));
+      emit();
+    },
+    () => {}
   );
 
-  return onSnapshot(q, snap => {
-    callback(snap.size);
-  });
+  const unsubReviews = onSnapshot(
+    query(
+      collection(db, 'vocabulary', partnerUid, 'reviews'),
+      where('reviewedAt', '>=', midTs),
+      where('reviewedAt', '<=', endTs)
+    ),
+    snap => {
+      wordsReviewedToday = new Set(snap.docs.map(d => d.data().wordId).filter(Boolean));
+      emit();
+    },
+    () => {}
+  );
+
+  return () => { unsubWords(); unsubReviews(); };
 }
 
 // Paginate — fetch older messages before a given cursor doc snapshot
@@ -715,13 +775,11 @@ export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
 }
 
 // replyTo: { id, text, senderName } — optional, stored only when replying
-// isEmergency: true → stored in main chat but excluded from unread badge counts
-export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null, isEmergency = false) {
+export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
   const expiresAt = new Date(Date.now() + messageTTLMs);
   await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
     senderId, text: text || null, mediaUrl, mediaType,
-    ...(replyTo    ? { replyTo }          : {}),
-    ...(isEmergency ? { isEmergency: true } : {}),
+    ...(replyTo ? { replyTo } : {}),
     createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
   });
 }
@@ -773,8 +831,7 @@ export function subscribeToUnreadCount(userId, callback) {
           );
 
       innerUnsub = onSnapshot(q, (msgSnap) => {
-        // Emergency messages are excluded from the unread badge
-        const count = msgSnap.docs.filter(d => !d.data().isEmergency).length;
+        const count = msgSnap.size;
         callback(count);
       }, () => callback(0));
     } catch {
@@ -941,12 +998,12 @@ export async function enterChatSession(userId) {
     const sessionStartedAt     = data.sessionStartedAt || null;
     const activeUsers          = data.activeUsers || [];
 
-    // If session expired or belongs to a different day — reset for today
+    // If session belongs to a different day — reset for today
     const isNewDay   = sessionDate !== today;
     const isExpired  = !!sessionExpiredAt;
 
-    if (isNewDay || isExpired) {
-      // Fresh session for today
+    if (isNewDay) {
+      // Fresh session for new BST day
       tx.set(roomRef, {
         ...data,
         sessionDate:          today,
@@ -956,6 +1013,13 @@ export async function enterChatSession(userId) {
         sessionExpiredAt:     null,
         activeUsers:          [userId],
       }, { merge: true });
+      return;
+    }
+
+    // Same day but expired — keep expired, just track user presence
+    if (isExpired) {
+      const newActiveUsers = activeUsers.includes(userId) ? activeUsers : [...activeUsers, userId];
+      tx.set(roomRef, { activeUsers: newActiveUsers }, { merge: true });
       return;
     }
 

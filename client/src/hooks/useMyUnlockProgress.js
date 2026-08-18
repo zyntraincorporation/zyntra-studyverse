@@ -1,11 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // useMyUnlockProgress — ZYNTRA StudyVerse
 //
-// NEW unlock rule (vocabulary-only, both partners):
-//   myVocabCount   >= 20  &&  partnerVocabCount >= 20  →  UNLOCKED
-//
-// The study-minutes requirement has been completely removed.
-// studyMinutes is still tracked and returned so dashboard widgets work.
+// Unlock rule: myVocabCount >= 20  &&  partnerVocabCount >= 20  →  UNLOCKED
 //
 // Real-time: both vocab counts update instantly via Firestore onSnapshot.
 // Daily reset: BST-aware midnight query means counts reset each BST day.
@@ -24,8 +20,8 @@ export function useMyUnlockProgress() {
   const user    = useAuthStore(s => s.user);
   const partner = useAuthStore(s => s.partner);
 
-  const [studyMinutes,    setStudyMinutes]    = useState(0);
-  const [myVocabCount,    setMyVocabCount]    = useState(0);
+  const [studyMinutes,      setStudyMinutes]      = useState(0);
+  const [myVocabCount,      setMyVocabCount]      = useState(0);
   const [partnerVocabCount, setPartnerVocabCount] = useState(0);
 
   // ── My sessions (for study-minutes display, not unlock) ────────────────────
@@ -44,7 +40,7 @@ export function useMyUnlockProgress() {
     return unsub;
   }, [user?.uid]);
 
-  // ── My today vocab count (BST-correct) ────────────────────────────────────
+  // ── My today vocab count (BST-correct, real-time) ─────────────────────────
   useEffect(() => {
     if (!user?.uid) return;
     const unsub = subscribeToTodayVocabCount(user.uid, (count) => {
@@ -53,18 +49,21 @@ export function useMyUnlockProgress() {
     return unsub;
   }, [user?.uid]);
 
-  // ── Partner today vocab count (BST-correct) ───────────────────────────────
+  // ── Partner today vocab count (BST-correct, real-time) ────────────────────
+  // NOTE: partner object may have uid or id depending on how findUserByEmail
+  // resolved it. We normalise here to always get the UID string.
   useEffect(() => {
-    if (!partner?.uid) return;
-    const unsub = subscribeToPartnerVocabCount(partner.uid, (count) => {
+    const partnerUid = partner?.uid || partner?.id;
+    if (!partnerUid) return;
+    const unsub = subscribeToPartnerVocabCount(partnerUid, (count) => {
       setPartnerVocabCount(count);
     });
     return unsub;
-  }, [partner?.uid]);
+  }, [partner?.uid, partner?.id]);
 
   const vocabThreshold = COUPLE_CONFIG.chatUnlockVocab; // 20
 
-  // NEW unlock rule: BOTH users must have completed 20 vocab today
+  // Unlock rule: BOTH users must have completed 20 vocab today
   const isUnlocked = myVocabCount >= vocabThreshold && partnerVocabCount >= vocabThreshold;
 
   return {
@@ -72,7 +71,7 @@ export function useMyUnlockProgress() {
     vocabCount:         myVocabCount,
     partnerVocabCount,
     vocabThreshold,
-    vocabPct:           Math.min(100, Math.round((myVocabCount    / vocabThreshold) * 100)),
+    vocabPct:           Math.min(100, Math.round((myVocabCount      / vocabThreshold) * 100)),
     partnerVocabPct:    Math.min(100, Math.round((partnerVocabCount / vocabThreshold) * 100)),
 
     // Study minutes (display only — not used for unlock)
