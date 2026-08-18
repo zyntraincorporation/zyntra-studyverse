@@ -235,3 +235,26 @@ model AIQueryHistory {
   @@index([userId])
   @@map("ai_query_history")
 }
+
+// ── 14. BUET Daily Challenge ───────────────────────────────────────────────────
+model BuetDailyChallenge {
+  id              Int      @id @default(autoincrement())
+  date            String   @unique  // YYYY-MM-DD BST — one per day
+  title           String            // e.g. "Physics Formula Speed Recall"
+  description     String            // short task description (1-2 lines)
+  challengeType   String            // speed_math | formula_recall | concept_drill | mcq_sprint | calculation_tricks | mixed
+  subject         String            // Physics | Chemistry | Math | Mixed
+  durationMinutes Int               // 30 | 45 | 60
+  targetAccuracy  Int?              // % accuracy target (optional)
+  targetProblems  Int?              // number of problems (optional)
+  chapterRef      String?           // e.g. "Physics 1st Paper — Ch7 Simple Harmonic Motion"
+  generatedAt     DateTime @default(now())
+
+  // Completion tracking
+  status          String   @default("pending")  // pending | started | completed | missed
+  startedAt       DateTime?
+  completedAt     DateTime?
+  elapsedSeconds  Int?     // elapsed timer value when completed
+
+  @@map("buet_daily_challenges")
+}

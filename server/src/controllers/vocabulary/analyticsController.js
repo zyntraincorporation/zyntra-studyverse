@@ -1,38 +1,26 @@
-import * as analyticsService from '../../services/vocabulary/analyticsService.js';
-import * as streakService from '../../services/vocabulary/streakService.js';
+const analyticsService = require('../../services/vocabulary/analyticsService');
+const streakService    = require('../../services/vocabulary/streakService');
 
-export async function getWeeklyStats(req, res) {
-  try {
-    const data = await analyticsService.getWeeklyComparison(req.userId);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+const uid = req => req.user?.id || 'saiful';
+
+async function getWeeklyStats(req, res) {
+  try { res.json(await analyticsService.getWeeklyComparison(uid(req))); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-export async function getMonthlyStats(req, res) {
-  try {
-    const data = await analyticsService.getMonthlyAnalytics(req.userId);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+async function getMonthlyStats(req, res) {
+  try { res.json(await analyticsService.getMonthlyAnalytics(uid(req))); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-export async function getStreakData(req, res) {
-  try {
-    const data = await streakService.getStreakInfo(req.userId);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+async function getStreakData(req, res) {
+  try { res.json(await streakService.getStreakInfo(uid(req))); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-export async function getHeatmapData(req, res) {
-  try {
-    const data = await analyticsService.getHeatmapData(req.userId);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+async function getHeatmapData(req, res) {
+  try { res.json(await analyticsService.getHeatmapData(uid(req))); }
+  catch (err) { res.status(500).json({ error: err.message }); }
 }
+
+module.exports = { getWeeklyStats, getMonthlyStats, getStreakData, getHeatmapData };

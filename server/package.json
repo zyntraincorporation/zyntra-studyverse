@@ -23,6 +23,7 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
+    "node-cron": "^4.6.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

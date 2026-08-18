@@ -1,7 +1,8 @@
-// server/src/ai/vocabularyAI.js
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Vocabulary AI — OpenRouter-powered word lookup and autofill
+// ─────────────────────────────────────────────────────────────────────────────
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'openai/gpt-4o-mini';
+const MODEL          = 'openai/gpt-4o-mini';
 
 function buildLookupPrompt(input, language) {
   return `You are a bilingual English-Bangla vocabulary assistant.
@@ -41,15 +42,15 @@ async function callOpenRouter(prompt) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://zyntra.app',   // তোমার Netlify URL দাও
-      'X-Title': 'Zyntra Study Tracker',
+      'Content-Type':  'application/json',
+      'HTTP-Referer':  'https://zyntra.app',
+      'X-Title':       'Zyntra Study Tracker',
     },
     body: JSON.stringify({
-      model: MODEL,
-      messages: [{ role: 'user', content: prompt }],
+      model:       MODEL,
+      messages:    [{ role: 'user', content: prompt }],
       temperature: 0.3,
-      max_tokens: 600,
+      max_tokens:  600,
     }),
   });
 
@@ -58,18 +59,18 @@ async function callOpenRouter(prompt) {
     throw new Error(`OpenRouter error: ${response.status} — ${err}`);
   }
 
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '{}';
-
-  // Strip accidental markdown fences
+  const data  = await response.json();
+  const text  = data.choices?.[0]?.message?.content || '{}';
   const clean = text.replace(/```json|```/g, '').trim();
   return JSON.parse(clean);
 }
 
-export async function lexiLookup(input, language = 'en') {
+async function lexiLookup(input, language = 'en') {
   return callOpenRouter(buildLookupPrompt(input, language));
 }
 
-export async function autofillWord(word) {
+async function autofillWord(word) {
   return callOpenRouter(buildAutofillPrompt(word));
 }
+
+module.exports = { lexiLookup, autofillWord };

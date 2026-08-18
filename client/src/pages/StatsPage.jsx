@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { BarChart2, TrendingUp, Calendar, Flame, ChevronRight, ChevronLeft } from 'lucide-react';
+import { BarChart2, TrendingUp, Calendar, Flame, ChevronRight, ChevronLeft, Brain, Trophy, CheckCircle2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store';
 import { getWeeklyStats, getHeatmapData } from '../firebase/db';
+import { challengeAPI } from '../lib/api';
 import { formatDuration } from '../lib/bst';
 
 const SUBJECT_COLOR = {
@@ -147,10 +148,11 @@ function SvgPieChart({ distribution }) {
 
 export default function StatsPage() {
   const user  = useAuthStore(s => s.user);
-  const [period,  setPeriod]  = useState(7);
-  const [stats,   setStats]   = useState(null);
-  const [heatmap, setHeatmap] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [period,          setPeriod]          = useState(7);
+  const [stats,           setStats]           = useState(null);
+  const [heatmap,         setHeatmap]         = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [challengeStats,  setChallengeStats]  = useState(null);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -164,6 +166,13 @@ export default function StatsPage() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [user?.uid, period]);
+
+  // Fetch challenge stats independently (no Firebase, uses REST API)
+  useEffect(() => {
+    challengeAPI.getStats()
+      .then(res => setChallengeStats(res.data))
+      .catch(() => setChallengeStats(null));
+  }, []);
 
   return (
     <div className="p-4 lg:p-6 max-w-4xl mx-auto space-y-6 pb-24">
@@ -255,6 +264,92 @@ export default function StatsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── BUET Daily Challenge Stats ─────────────────────────────────────── */}
+      {challengeStats && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          className="rounded-3xl border border-red-500/20 bg-gradient-to-br from-red-950/30 to-slate-900/50 p-6"
+        >
+          <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+            <Brain size={16} className="text-red-400" /> BUET Daily Challenge
+          </h3>
+          <p className="text-xs text-slate-500 mb-5">Separate AI system · not connected to AI Mentor</p>
+
+          {/* Top stats row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: 'Total',          value: challengeStats.total,          icon: '🧠', color: 'text-white'         },
+              { label: 'Completed',      value: challengeStats.completed,      icon: '✅', color: 'text-emerald-400'   },
+              { label: 'Missed',         value: challengeStats.missed,         icon: '❌', color: 'text-red-400'       },
+              { label: 'Completion Rate',value: `${challengeStats.rate}%`,     icon: '🎯', color: 'text-cyan-400'      },
+            ].map(s => (
+              <div key={s.label} className="rounded-2xl bg-white/[0.03] border border-white/10 p-3 text-center">
+                <span className="text-xl">{s.icon}</span>
+                <p className={`text-xl font-black mt-1 ${s.color}`}>{s.value}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-wider">{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Streak + Time row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+            <div className="rounded-2xl bg-orange-500/10 border border-orange-500/20 p-4 flex items-center gap-3">
+              <span className="text-2xl">🔥</span>
+              <div>
+                <p className="text-lg font-black text-orange-400">{challengeStats.currentStreak} days</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Current Streak</p>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 p-4 flex items-center gap-3">
+              <Trophy size={20} className="text-yellow-400 shrink-0" />
+              <div>
+                <p className="text-lg font-black text-yellow-400">{challengeStats.bestStreak} days</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Best Streak</p>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-purple-500/10 border border-purple-500/20 p-4 flex items-center gap-3">
+              <CheckCircle2 size={20} className="text-purple-400 shrink-0" />
+              <div>
+                <p className="text-lg font-black text-purple-400">{challengeStats.totalMinutes} min</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Total Time</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Subject breakdown */}
+          {challengeStats.bySubject && Object.keys(challengeStats.bySubject).length > 0 && (
+            <div>
+              <p className="text-xs text-slate-500 mb-3 uppercase tracking-wider">Subject Breakdown</p>
+              <div className="space-y-2">
+                {Object.entries(challengeStats.bySubject).map(([subj, data]) => {
+                  const pct = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+                  const color = subj === 'Physics' ? '#06b6d4' : subj === 'Chemistry' ? '#a855f7' : subj === 'Math' ? '#f59e0b' : '#ef4444';
+                  return (
+                    <div key={subj} className="flex items-center gap-3">
+                      <span className="text-xs text-slate-400 w-20 shrink-0">{subj}</span>
+                      <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, background: color }} />
+                      </div>
+                      <span className="text-xs text-slate-400 w-16 text-right shrink-0">
+                        {data.completed}/{data.total} done
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* No data state */}
+          {challengeStats.total === 0 && (
+            <p className="text-sm text-slate-500 text-center py-4">
+              No challenges yet — open the dashboard to get your first one!
+            </p>
+          )}
+        </motion.div>
       )}
     </div>
   );

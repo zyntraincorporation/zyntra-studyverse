@@ -133,9 +133,19 @@ export const mistakesAPI = {
 };
 
 export const targetsAPI = {
-  getByMonth:  (month)        => api.get(`/api/targets?month=${month}`),
-  getMonths:   ()             => api.get('/api/targets/months'),
+  getByMonth:  (month)          => api.get(`/api/targets?month=${month}`),
+  getMonths:   ()               => api.get('/api/targets/months'),
   seedMonth:   (month, targets) => api.post('/api/targets/seed', { month, targets }),
-  update:      (id, data)     => api.patch(`/api/targets/${id}`, data),
-  delete:      (id)           => api.delete(`/api/targets/${id}`),
+  update:      (id, data)       => api.patch(`/api/targets/${id}`, data),
+  delete:      (id)             => api.delete(`/api/targets/${id}`),
+};
+
+// ── BUET Daily Challenge API — separate system, not connected to AI Mentor ────
+export const challengeAPI = {
+  getToday:     ()               => api.get('/api/challenge/today'),
+  start:        (date)           => api.post(`/api/challenge/${date}/start`),
+  complete:     (date, elapsed)  => api.post(`/api/challenge/${date}/complete`, { elapsedSeconds: elapsed }),
+  getStats:     ()               => api.get('/api/challenge/stats'),
+  getHistory:   ()               => api.get('/api/challenge/history'),
+  generateNow:  ()               => api.post('/api/challenge/generate-now'), // dev/testing
 };

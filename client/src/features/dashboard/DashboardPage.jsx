@@ -31,6 +31,7 @@ import { usePartnerStats } from '../../hooks/usePartnerStats';
 import LiveStudyBanner from '../presence/LiveStudyBanner';
 import PendingSessionModal from '../../components/checkin/PendingSessionModal';
 import MorningCheckinModal from '../../components/checkin/MorningCheckinModal';
+import BuetDailyChallenge from './BuetDailyChallenge';
 import { checkinAPI } from '../../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -664,6 +665,11 @@ export default function DashboardPage() {
             </div>
           </motion.div>
         </div>
+
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        {/* BUET DAILY CHALLENGE — Separate AI System                      */}
+        {/* ═══════════════════════════════════════════════════════════════ */}
+        <BuetDailyChallenge />
 
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* SECTION 3 — HSC EXAM COUNTDOWN (COMPACT)                      */}

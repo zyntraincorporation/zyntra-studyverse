@@ -1,5 +1,5 @@
 const express    = require('express');
-const { authenticate } = require('../middleware/auth');   // তোমার existing auth middleware
+const { requireAuth } = require('../middleware/auth');
 const {
   getWords, createWord, updateWord, deleteWord, getWordById
 } = require('../controllers/vocabulary/wordsController');
@@ -14,7 +14,7 @@ const {
 } = require('../controllers/vocabulary/aiController');
 
 const router = express.Router();
-router.use(authenticate);
+router.use(requireAuth);
 
 router.get('/words',           getWords);
 router.get('/words/:id',       getWordById);

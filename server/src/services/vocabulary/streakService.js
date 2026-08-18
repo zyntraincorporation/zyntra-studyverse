@@ -1,6 +1,6 @@
-import prisma from '../../db/client.js';
+const prisma = require('../../db/client');
 
-export async function getStreakInfo(userId) {
+async function getStreakInfo(userId) {
   const reviews = await prisma.vocabularyReview.findMany({
     where: { userId },
     select: { reviewedAt: true },
@@ -11,10 +11,9 @@ export async function getStreakInfo(userId) {
     reviews.map(r => r.reviewedAt.toISOString().split('T')[0])
   )].sort().reverse();
 
-  let currentStreak = 0;
   let longestStreak = 0;
-  let tempStreak = 0;
-  let prevDate = null;
+  let tempStreak    = 0;
+  let prevDate      = null;
 
   for (const day of days) {
     const date = new Date(day);
@@ -28,8 +27,9 @@ export async function getStreakInfo(userId) {
     prevDate = date;
   }
 
-  // Current streak: must include today or yesterday
-  const today = new Date().toISOString().split('T')[0];
+  // Current streak — must include today or yesterday
+  let currentStreak = 0;
+  const today     = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
   if (days[0] === today || days[0] === yesterday) {
     let streak = 0;
@@ -49,3 +49,5 @@ export async function getStreakInfo(userId) {
     lastActivityDate: days[0] || null,
   };
 }
+
+module.exports = { getStreakInfo };

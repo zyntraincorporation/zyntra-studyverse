@@ -1,6 +1,6 @@
-import { z } from 'zod';
-import * as revisionService from '../../services/vocabulary/revisionService.js';
-import prisma from '../../db/client.js';
+const { z }            = require('zod');
+const revisionService  = require('../../services/vocabulary/revisionService');
+const prisma           = require('../../db/client');
 
 const ReviewSchema = z.object({
   wordId:     z.string(),
@@ -10,31 +10,27 @@ const ReviewSchema = z.object({
   responseMs: z.number().int().optional(),
 });
 
-export async function getYesterdayWords(req, res) {
+const uid = req => req.user?.id || 'saiful';
+
+async function getYesterdayWords(req, res) {
   try {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(0, 0, 0, 0);
     const end = new Date(yesterday);
     end.setHours(23, 59, 59, 999);
-
     const words = await prisma.vocabularyWord.findMany({
-      where: {
-        userId: req.userId,
-        createdAt: { gte: yesterday, lte: end },
-      },
+      where: { userId: uid(req), createdAt: { gte: yesterday, lte: end } },
       orderBy: { createdAt: 'asc' },
     });
     res.json(words);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
-export async function submitReview(req, res) {
+async function submitReview(req, res) {
   try {
-    const data = ReviewSchema.parse(req.body);
-    const result = await revisionService.recordReview(req.userId, data);
+    const data   = ReviewSchema.parse(req.body);
+    const result = await revisionService.recordReview(uid(req), data);
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
@@ -42,20 +38,15 @@ export async function submitReview(req, res) {
   }
 }
 
-export async function getRevisionQueue(req, res) {
+async function getRevisionQueue(req, res) {
   try {
-    const now = new Date();
     const queue = await prisma.vocabularyWord.findMany({
-      where: {
-        userId: req.userId,
-        nextReviewAt: { lte: now },
-        isArchived: false,
-      },
+      where: { userId: uid(req), nextReviewAt: { lte: new Date() }, isArchived: false },
       orderBy: [{ nextReviewAt: 'asc' }, { masteryLevel: 'asc' }],
       take: 30,
     });
     res.json(queue);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 }
+
+module.exports = { getYesterdayWords, submitReview, getRevisionQueue };

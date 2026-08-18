@@ -1,6 +1,6 @@
-import prisma from '../../db/client.js';
+const prisma = require('../../db/client');
 
-export async function getWeeklyComparison(userId) {
+async function getWeeklyComparison(userId) {
   const now = new Date();
   const thisWeekStart = new Date(now);
   thisWeekStart.setDate(now.getDate() - now.getDay());
@@ -12,18 +12,10 @@ export async function getWeeklyComparison(userId) {
 
   const [thisWeekWords, lastWeekWords, thisWeekReviews, lastWeekReviews] =
     await Promise.all([
-      prisma.vocabularyWord.count({
-        where: { userId, createdAt: { gte: thisWeekStart } },
-      }),
-      prisma.vocabularyWord.count({
-        where: { userId, createdAt: { gte: lastWeekStart, lt: lastWeekEnd } },
-      }),
-      prisma.vocabularyReview.count({
-        where: { userId, reviewedAt: { gte: thisWeekStart } },
-      }),
-      prisma.vocabularyReview.count({
-        where: { userId, reviewedAt: { gte: lastWeekStart, lt: lastWeekEnd } },
-      }),
+      prisma.vocabularyWord.count({ where: { userId, createdAt: { gte: thisWeekStart } } }),
+      prisma.vocabularyWord.count({ where: { userId, createdAt: { gte: lastWeekStart, lt: lastWeekEnd } } }),
+      prisma.vocabularyReview.count({ where: { userId, reviewedAt: { gte: thisWeekStart } } }),
+      prisma.vocabularyReview.count({ where: { userId, reviewedAt: { gte: lastWeekStart, lt: lastWeekEnd } } }),
     ]);
 
   const thisWeekCorrect = await prisma.vocabularyReview.count({
@@ -36,24 +28,22 @@ export async function getWeeklyComparison(userId) {
   return {
     thisWeek: {
       wordsLearned: thisWeekWords,
-      revisions: thisWeekReviews,
-      successRate: thisWeekReviews > 0
-        ? Math.round((thisWeekCorrect / thisWeekReviews) * 100) : 0,
+      revisions:    thisWeekReviews,
+      successRate:  thisWeekReviews > 0 ? Math.round((thisWeekCorrect / thisWeekReviews) * 100) : 0,
     },
     lastWeek: {
       wordsLearned: lastWeekWords,
-      revisions: lastWeekReviews,
-      successRate: lastWeekReviews > 0
-        ? Math.round((lastWeekCorrect / lastWeekReviews) * 100) : 0,
+      revisions:    lastWeekReviews,
+      successRate:  lastWeekReviews > 0 ? Math.round((lastWeekCorrect / lastWeekReviews) * 100) : 0,
     },
     delta: {
-      words:    thisWeekWords - lastWeekWords,
-      revisions: thisWeekReviews - lastWeekReviews,
+      words:     thisWeekWords    - lastWeekWords,
+      revisions: thisWeekReviews  - lastWeekReviews,
     },
   };
 }
 
-export async function getMonthlyAnalytics(userId) {
+async function getMonthlyAnalytics(userId) {
   const start = new Date();
   start.setDate(1);
   start.setHours(0, 0, 0, 0);
@@ -75,19 +65,16 @@ export async function getMonthlyAnalytics(userId) {
     }),
   ]);
 
-  // Daily consistency (count unique days with at least 1 review this month)
   const reviews = await prisma.vocabularyReview.findMany({
     where: { userId, reviewedAt: { gte: start } },
     select: { reviewedAt: true },
   });
-  const activeDays = new Set(
-    reviews.map(r => r.reviewedAt.toISOString().split('T')[0])
-  ).size;
+  const activeDays = new Set(reviews.map(r => r.reviewedAt.toISOString().split('T')[0])).size;
 
   return { totalWords, totalReviews, hardestWords, mostFailedWords, activeDays };
 }
 
-export async function getHeatmapData(userId) {
+async function getHeatmapData(userId) {
   const start = new Date();
   start.setMonth(start.getMonth() - 3);
 
@@ -97,7 +84,6 @@ export async function getHeatmapData(userId) {
     _count: true,
   });
 
-  // Aggregate by date
   const map = {};
   for (const r of reviews) {
     const day = r.reviewedAt.toISOString().split('T')[0];
@@ -105,3 +91,5 @@ export async function getHeatmapData(userId) {
   }
   return map;
 }
+
+module.exports = { getWeeklyComparison, getMonthlyAnalytics, getHeatmapData };

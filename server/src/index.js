@@ -21,7 +21,9 @@ const mistakesRoutes  = require('./routes/mistakes');
 const notesRoutes     = require('./routes/notes');
 const vocabularyRoutes = require('./routes/vocabulary');
 const targetsRoutes   = require('./routes/targets');
+const challengeRoutes = require('./routes/challenge');            // BUET Daily Challenge
 const { startSessionAutoMissWorker } = require('./lib/sessionReconciliation');
+const { startChallengeScheduler }    = require('./lib/challengeScheduler'); // BUET 6AM Scheduler
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -52,17 +54,18 @@ const aiLimiter = rateLimit({
 app.use('/api/ai/analyze', aiLimiter);
 
 // ── Routes ─────────────────────────────────────────────────────────────────────
-app.use('/api/auth',     authRoutes);
-app.use('/api/checkin',  checkinRoutes);
-app.use('/api/sessions', sessionsRoutes);
-app.use('/api/chapters', chaptersRoutes);
-app.use('/api/stats',    statsRoutes);
+app.use('/api/auth',      authRoutes);
+app.use('/api/checkin',   checkinRoutes);
+app.use('/api/sessions',  sessionsRoutes);
+app.use('/api/chapters',  chaptersRoutes);
+app.use('/api/stats',     statsRoutes);
 app.use('/api/ai',        aiRoutes);
 app.use('/api/revisions', revisionsRoutes);
 app.use('/api/mistakes',  mistakesRoutes);
 app.use('/api/notes',     notesRoutes);
 app.use('/api/targets',   targetsRoutes);
 app.use('/api/vocabulary', vocabularyRoutes);
+app.use('/api/challenge', challengeRoutes); // BUET Daily Challenge
 
 // Health check — Render uses this
 // ── Keep-alive: প্রতি ১৪ মিনিটে নিজেকে ping করো ──────────────────────────────
@@ -112,5 +115,6 @@ app.listen(PORT, () => {
 });
 
 startSessionAutoMissWorker();
+startChallengeScheduler();   // BUET Daily Challenge — 06:00 AM BST (Asia/Dhaka)
 
 module.exports = app;
