@@ -663,13 +663,13 @@ export default function DashboardPage() {
               </div>
               <ProgressBar pct={buetOverall} color="linear-gradient(90deg, #7f1d1d, #ef4444)" height="h-2" />
             </div>
+
+            {/* ── BUET Daily Challenge — inside empty space ──────────────── */}
+            <div className="mt-5 pt-4 border-t border-red-500/20">
+              <BuetDailyChallenge />
+            </div>
           </motion.div>
         </div>
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* BUET DAILY CHALLENGE — Separate AI System                      */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        <BuetDailyChallenge />
 
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* SECTION 3 — HSC EXAM COUNTDOWN (COMPACT)                      */}
