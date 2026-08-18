@@ -1,148 +1,79 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ChatPage.jsx — ZYNTRA StudyVerse
 //
-// Shared 45-minute chat session system:
-//  • Firestore chat room doc is source of truth for session state
-//  • enterChatSession() called on mount  → adds user to activeUsers, resumes timer
-//  • leaveChatSession() called on unmount → removes user, pauses if no one left
-//  • Timer running when activeUsers.length > 0, paused when empty
-//  • Client computes remainingMs from server timestamps (no drift)
-//  • Session resets each BST day; expired sessions cannot be reset by refresh
+// Shared 25,000-character daily chat system:
+//  • Both users must complete 20 vocabulary → Chat Unlocked
+//  • Shared 25,000 grapheme characters per BST day
+//  • Atomic server-side enforcement — no partial sends, no race conditions
+//  • When limit reached: full lockout (no messages sent OR viewed)
+//  • Real-time shared counter: both screens update instantly
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Unlock, Bell, BellOff, Wifi, Timer, Users } from 'lucide-react';
+import { Lock, Unlock, Bell, BellOff, Wifi, MessageSquare } from 'lucide-react';
 import { useAuthStore } from '../../store';
 import {
   updateLastRead,
   sendPushNotification,
-  subscribeToChatSession,
-  enterChatSession,
-  leaveChatSession,
-  expireChatSession,
+  subscribeToDailyCharUsage,
 } from '../../firebase/db';
 import { isPushGranted, requestPushPermission } from '../../firebase/messaging';
 import { usePartnerStats } from '../../hooks/usePartnerStats';
 import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
-import { formatDistanceToNow } from 'date-fns';
 import { COUPLE_CONFIG } from '../../lib/constants';
-import ChatUnlockGate from './ChatUnlockGate';
-import MessageList    from './MessageList';
-import ChatInput      from './ChatInput';
+import ChatUnlockGate      from './ChatUnlockGate';
+import DailyCharLimitGate  from './DailyCharLimitGate';
+import MessageList         from './MessageList';
+import ChatInput           from './ChatInput';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+const DAILY_LIMIT = COUPLE_CONFIG.dailyCharLimit; // 25 000
 
-const SESSION_DURATION_MS = COUPLE_CONFIG.chatWindowMinutes * 60 * 1000; // 45 min
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatCountdown(ms) {
-  const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+function formatNum(n) {
+  return n.toLocaleString('en-US');
 }
 
-/**
- * Computes remaining milliseconds from the Firestore session snapshot.
- * This is the client-side calculation from server-authoritative timestamps.
- */
-function computeRemainingMs(session) {
-  if (!session) return SESSION_DURATION_MS;
-
-  const { sessionExpiredAt, sessionStartedAt, sessionPausedAt, sessionAccumulatedMs = 0 } = session;
-
-  // Session expired
-  if (sessionExpiredAt) return 0;
-
-  let elapsedMs = sessionAccumulatedMs;
-
-  if (sessionStartedAt && !sessionPausedAt) {
-    // Timer is currently RUNNING
-    const startMs = sessionStartedAt.toDate
-      ? sessionStartedAt.toDate().getTime()
-      : (sessionStartedAt.seconds * 1000);
-    elapsedMs += Math.max(0, Date.now() - startMs);
-  }
-  // If paused: elapsedMs = accumulated only (no additional time)
-
-  return Math.max(0, SESSION_DURATION_MS - elapsedMs);
-}
-
-function getSessionStatus(session, isUnlocked) {
-  if (!isUnlocked) return 'locked';
-  if (!session || !session.sessionDate) return 'no-session';
-  if (session.sessionExpiredAt) return 'expired';
-  return 'active'; // running or paused — both render the same chat UI
-}
-
-// ── Session Timer Display ─────────────────────────────────────────────────────
-
-function SessionTimer({ remainingMs, isPaused, activeCount }) {
-  const pct = Math.max(0, Math.min(100, (remainingMs / SESSION_DURATION_MS) * 100));
-  const isLow = remainingMs < 5 * 60 * 1000; // < 5 min
+// ── Daily character usage bar ─────────────────────────────────────────────────
+function DailyCharBar({ usedChars }) {
+  const remaining = Math.max(0, DAILY_LIMIT - usedChars);
+  const pct       = Math.min(100, Math.round((usedChars / DAILY_LIMIT) * 100));
+  const isLow     = remaining < 2000;
+  const isCritical = remaining < 500;
 
   return (
     <div className="px-4 py-2 border-b border-white/[0.06] bg-[#0c1220]/80 shrink-0">
-      <div className="flex items-center justify-between gap-3 max-w-full">
-        <div className="flex items-center gap-2 min-w-0">
-          <Timer size={13} className={isLow ? 'text-red-400' : 'text-cyan-400'} />
-          <span className={`text-xs font-medium ${isLow ? 'text-red-300' : 'text-cyan-300'}`}>
-            {isPaused ? 'Paused' : 'Session'}
+      <div className="flex items-center justify-between gap-3 mb-1.5">
+        <div className="flex items-center gap-1.5">
+          <MessageSquare
+            size={12}
+            className={isCritical ? 'text-red-400' : isLow ? 'text-orange-400' : 'text-cyan-400'}
+          />
+          <span className={`text-[11px] font-medium ${isCritical ? 'text-red-300' : isLow ? 'text-orange-300' : 'text-cyan-300'}`}>
+            Daily Chat
           </span>
-          {activeCount > 0 && (
-            <span className="flex items-center gap-1 text-[10px] text-slate-500">
-              <Users size={10} />
-              {activeCount}
-            </span>
-          )}
         </div>
-
-        <div className="flex items-center gap-2.5">
-          {/* Progress bar */}
-          <div className="w-20 h-1 bg-white/10 rounded-full overflow-hidden">
-            <motion.div
-              animate={{ width: `${pct}%` }}
-              transition={{ duration: 1, ease: 'linear' }}
-              className={`h-full rounded-full ${
-                isLow ? 'bg-red-500' : isPaused ? 'bg-slate-500' : 'bg-cyan-500'
-              }`}
-            />
-          </div>
-
-          {/* Countdown */}
-          <span className={`text-xs font-mono font-semibold tabular-nums ${
-            isLow ? 'text-red-400' : isPaused ? 'text-slate-400' : 'text-white'
-          }`}>
-            {isPaused && <span className="text-slate-500 mr-1">⏸</span>}
-            {formatCountdown(remainingMs)}
+        <div className="flex items-center gap-2 text-[10px] tabular-nums">
+          <span className={isCritical ? 'text-red-400' : isLow ? 'text-orange-400' : 'text-slate-400'}>
+            {formatNum(usedChars)} / {formatNum(DAILY_LIMIT)} used
+          </span>
+          <span className="text-slate-600">·</span>
+          <span className={isCritical ? 'text-red-400 font-semibold' : isLow ? 'text-orange-400' : 'text-slate-500'}>
+            {formatNum(remaining)} left
           </span>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Expired Overlay ───────────────────────────────────────────────────────────
-
-function SessionExpiredBanner() {
-  return (
-    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-      <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="text-5xl"
-      >⏰</motion.div>
-      <div className="text-center">
-        <h3 className="text-lg font-bold text-white mb-2">Session Ended</h3>
-        <p className="text-sm text-slate-400 max-w-xs leading-relaxed">
-          Today's 45-minute shared chat session has ended.
-          <br />
-          Complete your vocabulary tomorrow to unlock a new session.
-        </p>
-      </div>
-      <div className="bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-center">
-        <p className="text-xs text-slate-500">Session available again tomorrow 🌙</p>
+      {/* Progress bar */}
+      <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden">
+        <motion.div
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+          className={`h-full rounded-full ${
+            isCritical
+              ? 'bg-gradient-to-r from-red-500 to-rose-400'
+              : isLow
+              ? 'bg-gradient-to-r from-orange-500 to-amber-400'
+              : 'bg-gradient-to-r from-cyan-500 to-blue-500'
+          }`}
+        />
       </div>
     </div>
   );
@@ -159,87 +90,21 @@ export default function ChatPage() {
   const [pushRequesting, setPushRequesting] = useState(false);
   const [showPushBanner, setShowPushBanner] = useState(false);
 
-  // ── Shared session state (from Firestore) ─────────────────────────────────
-  const [session,      setSession]      = useState(null);
-  const [remainingMs,  setRemainingMs]  = useState(SESSION_DURATION_MS);
-  const [sessionReady, setSessionReady] = useState(false);
+  // ── Daily char usage (real-time from Firestore) ───────────────────────────
+  const [usedChars, setUsedChars] = useState(0);
 
-  const hasEnteredRef   = useRef(false);
-  const expiredFiredRef = useRef(false);
-  const tickRef         = useRef(null);
-  const hasMarkedRead   = useRef(false);
+  const hasMarkedRead = useRef(false);
 
   const partnerStats = usePartnerStats();
   const { isUnlocked } = useMyUnlockProgress();
 
-  // ── Subscribe to shared session from Firestore ────────────────────────────
+  // ── Subscribe to real-time daily char usage ───────────────────────────────
   useEffect(() => {
-    const unsub = subscribeToChatSession((sess) => {
-      setSession(sess);
-      setSessionReady(true);
+    const unsub = subscribeToDailyCharUsage(({ usedChars: u }) => {
+      setUsedChars(u);
     });
     return unsub;
   }, []);
-
-  // ── Enter/Leave session lifecycle (handles visibility & unmount without ghosting) ──
-  useEffect(() => {
-    if (!user?.uid || !isUnlocked || !sessionReady) return;
-
-    const enter = () => {
-      enterChatSession(user.uid).catch(err =>
-        console.warn('[ChatPage] enterChatSession failed:', err)
-      );
-    };
-
-    const leave = () => {
-      leaveChatSession(user.uid).catch(() => {});
-    };
-
-    enter();
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        enter();
-        updateLastRead(user.uid).catch(() => {});
-      } else {
-        leave();
-      }
-    };
-
-    const handleUnload = () => leave();
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('beforeunload', handleUnload);
-    window.addEventListener('pagehide', handleUnload);
-
-    return () => {
-      leave();
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('beforeunload', handleUnload);
-      window.removeEventListener('pagehide', handleUnload);
-    };
-  }, [user?.uid, isUnlocked, sessionReady]);
-
-  // ── Client-side tick: recompute remainingMs from server state ─────────────
-  // The server timestamps are authoritative. We just recalculate every second.
-  useEffect(() => {
-    if (!session) return;
-
-    const tick = () => {
-      const ms = computeRemainingMs(session);
-      setRemainingMs(ms);
-
-      // If timer hits 0 and not already expired — fire expireChatSession()
-      if (ms <= 0 && !session.sessionExpiredAt && !expiredFiredRef.current) {
-        expiredFiredRef.current = true;
-        expireChatSession().catch(() => {});
-      }
-    };
-
-    tick(); // immediate
-    tickRef.current = setInterval(tick, 1000);
-    return () => clearInterval(tickRef.current);
-  }, [session]);
 
   // ── Mark messages as read on enter ───────────────────────────────────────
   useEffect(() => {
@@ -292,42 +157,30 @@ export default function ChatPage() {
     }
   }, [user, partner]);
 
-  // ── Derived state (Real-Time Online & Clean Last Seen) ───────────────────
+  // ── Derived state ─────────────────────────────────────────────────────────
   const partnerUid = partner?.uid || partner?.id;
-  const partnerInChat = !!(partnerUid && session?.activeUsers?.includes(partnerUid));
   const lastSeenDate = partnerStats?.lastSeen instanceof Date
     ? partnerStats.lastSeen
     : (partnerStats?.lastSeen ? new Date(partnerStats.lastSeen) : null);
   const lastSeenMs = lastSeenDate && !isNaN(lastSeenDate.getTime()) ? lastSeenDate.getTime() : 0;
   const nowMs = Date.now();
 
-  // Online if actively in chat or heartbeat received in last 2.5 minutes
-  const isOnline = partnerInChat || (lastSeenMs > 0 && (nowMs - lastSeenMs < 150000));
+  const isOnline = lastSeenMs > 0 && (nowMs - lastSeenMs < 150000);
 
   let lastSeenText = 'offline';
   if (isOnline) {
     lastSeenText = 'online';
   } else if (lastSeenMs > 0) {
     const diffSec = Math.floor((nowMs - lastSeenMs) / 1000);
-    if (diffSec < 60) {
-      lastSeenText = 'last seen just now';
-    } else if (diffSec < 3600) {
-      lastSeenText = `last seen ${Math.floor(diffSec / 60)}m ago`;
-    } else if (diffSec < 86400) {
-      lastSeenText = `last seen ${Math.floor(diffSec / 3600)}h ago`;
-    } else if (diffSec < 86400 * 7) {
-      lastSeenText = `last seen ${Math.floor(diffSec / 86400)}d ago`;
-    } else {
-      lastSeenText = `last seen ${lastSeenDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
-    }
+    if (diffSec < 60)           lastSeenText = 'last seen just now';
+    else if (diffSec < 3600)    lastSeenText = `last seen ${Math.floor(diffSec / 60)}m ago`;
+    else if (diffSec < 86400)   lastSeenText = `last seen ${Math.floor(diffSec / 3600)}h ago`;
+    else if (diffSec < 604800)  lastSeenText = `last seen ${Math.floor(diffSec / 86400)}d ago`;
+    else lastSeenText = `last seen ${lastSeenDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
   }
 
-  const sessionStatus = getSessionStatus(session, isUnlocked);
-  const isPaused    = !!session?.sessionPausedAt && !session?.sessionExpiredAt;
-  const activeCount = session?.activeUsers?.length || 0;
-
-  // Show chat UI when unlocked and not expired
-  const showChat = isUnlocked && sessionStatus !== 'expired';
+  // ── Render logic ──────────────────────────────────────────────────────────
+  const isLimitReached = usedChars >= DAILY_LIMIT;
 
   return (
     <div className="flex flex-col h-[calc(100vh-57px)] bg-[#080b14]">
@@ -336,9 +189,9 @@ export default function ChatPage() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-[#0c1220] shrink-0">
         <div className="flex items-center gap-3">
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-            isUnlocked ? 'bg-cyan-500/20' : 'bg-slate-700/40'
+            isUnlocked && !isLimitReached ? 'bg-cyan-500/20' : 'bg-slate-700/40'
           }`}>
-            {isUnlocked
+            {isUnlocked && !isLimitReached
               ? <Unlock size={15} className="text-cyan-400" />
               : <Lock   size={15} className="text-slate-500" />
             }
@@ -346,11 +199,15 @@ export default function ChatPage() {
           <div>
             <h2 className="text-sm font-semibold text-white">Couple Chat 💬</h2>
             <div className="flex items-center gap-2">
-              <p className={`text-xs ${isUnlocked ? 'text-green-400' : 'text-slate-500'}`}>
-                {isUnlocked ? 'Chat is open!' : 'Locked — complete daily vocabulary'}
+              <p className={`text-xs ${isUnlocked && !isLimitReached ? 'text-green-400' : 'text-slate-500'}`}>
+                {!isUnlocked
+                  ? 'Locked — complete daily vocabulary'
+                  : isLimitReached
+                  ? 'Daily limit reached 🔒'
+                  : 'Chat is open!'}
               </p>
               {/* Partner online status */}
-              {isUnlocked && partnerStats && (
+              {isUnlocked && !isLimitReached && partnerStats && (
                 <div className="flex items-center gap-1.5 ml-2 border-l border-white/10 pl-2">
                   <span className={`w-1.5 h-1.5 rounded-full ${
                     isOnline
@@ -383,7 +240,7 @@ export default function ChatPage() {
 
       {/* ── Push notification banner ── */}
       <AnimatePresence>
-        {showPushBanner && !pushGranted && isUnlocked && (
+        {showPushBanner && !pushGranted && isUnlocked && !isLimitReached && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
@@ -417,19 +274,15 @@ export default function ChatPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Session timer bar (only when unlocked and not expired) ── */}
-      {showChat && session?.sessionDate && (
-        <SessionTimer
-          remainingMs={remainingMs}
-          isPaused={isPaused}
-          activeCount={activeCount}
-        />
+      {/* ── Daily char usage bar (only when unlocked and not limit-reached) ── */}
+      {isUnlocked && !isLimitReached && (
+        <DailyCharBar usedChars={usedChars} />
       )}
 
       {/* ── Body ── */}
       <AnimatePresence mode="wait">
         {!isUnlocked ? (
-          /* Locked gate */
+          /* Vocabulary not complete — show unlock gate */
           <motion.div
             key="gate"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -438,18 +291,18 @@ export default function ChatPage() {
             <ChatUnlockGate />
           </motion.div>
 
-        ) : sessionStatus === 'expired' ? (
-          /* Session expired */
+        ) : isLimitReached ? (
+          /* 25K limit reached — full lockout (no messages viewable per spec) */
           <motion.div
-            key="expired"
+            key="limit"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            <SessionExpiredBanner />
+            <DailyCharLimitGate usedChars={usedChars} />
           </motion.div>
 
         ) : (
-          /* Active / Paused chat */
+          /* Active chat */
           <motion.div
             key="chat"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -459,10 +312,11 @@ export default function ChatPage() {
               onReply={setReplyTo}
               partnerLastReadAt={partnerStats?.chatLastReadAt}
               partnerLastSeen={partnerStats?.lastSeen}
-              partnerIsActiveInChat={session?.activeUsers?.includes(partner?.uid || partner?.id)}
+              partnerIsActiveInChat={false}
             />
             <ChatInput
               isLocked={false}
+              usedChars={usedChars}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
               onMessageSent={handleMessageSent}

@@ -11,10 +11,10 @@ import {
 import { db } from './config';
 import { getBSTDateString, getBSTYearMonth, getDateRange } from '../lib/bst';
 import { COUPLE_CONFIG, LEADERBOARD_SCORE_WEIGHTS } from '../lib/constants';
+import { countGraphemes } from '../lib/grapheme';
 
 // ── Couple Chat Config (must be at module top to avoid TDZ in all functions) ──
-const { chatRoomId, chatWindowMinutes, messageTTLMs } = COUPLE_CONFIG;
-const CHAT_SESSION_DURATION_MS = chatWindowMinutes * 60 * 1000;
+const { chatRoomId, dailyCharLimit, messageTTLMs } = COUPLE_CONFIG;
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -864,15 +864,67 @@ export async function fetchOlderMessages(oldestDocId, limitCount = 30) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// replyTo: { id, text, senderName } — optional, stored only when replying
+/**
+ * Sends a message with atomic server-side 25K daily character enforcement.
+ *
+ * Flow (inside a single Firestore transaction):
+ *   1. Count grapheme clusters in text (Unicode-aware, matches client counter)
+ *   2. Read chat room doc to get today's shared char usage
+ *   3. If today date differs → reset usage to 0 (BST daily reset)
+ *   4. If charCount > remaining → throw DAILY_LIMIT_EXCEEDED (no partial send)
+ *   5. Write the message document
+ *   6. Update dailyCharUsage atomically
+ *
+ * @throws {{ code: 'DAILY_LIMIT_EXCEEDED', remaining: number }} when limit would be exceeded
+ */
 export async function sendMessage(senderId, text, mediaUrl = null, mediaType = null, replyTo = null) {
+  const roomRef   = ref('chat', chatRoomId);
+  const msgColRef = collection(db, 'chat', chatRoomId, 'messages');
+  const today     = getBSTDateString();
+  const charCount = text ? countGraphemes(text) : 0;
   const expiresAt = new Date(Date.now() + messageTTLMs);
-  await addDoc(collection(db, 'chat', chatRoomId, 'messages'), {
-    senderId, text: text || null, mediaUrl, mediaType,
-    ...(replyTo ? { replyTo } : {}),
-    createdAt: now(), expiresAt: Timestamp.fromDate(expiresAt),
+
+  // Prepare a new doc ref outside the transaction so we can write inside it
+  const newMsgRef = doc(msgColRef);
+
+  await runTransaction(db, async (tx) => {
+    const roomSnap = await tx.get(roomRef);
+    const roomData = roomSnap.exists() ? roomSnap.data() : {};
+
+    // ── Read today's usage ────────────────────────────────────────────────────
+    const usage     = roomData.dailyCharUsage || {};
+    const usedChars = (usage.date === today) ? (usage.usedChars || 0) : 0;
+    const remaining = dailyCharLimit - usedChars;
+
+    // ── Enforce limit ─────────────────────────────────────────────────────────
+    if (charCount > remaining) {
+      const err  = new Error('Daily character limit exceeded');
+      err.code      = 'DAILY_LIMIT_EXCEEDED';
+      err.remaining = remaining;
+      throw err;
+    }
+
+    // ── Write message ─────────────────────────────────────────────────────────
+    tx.set(newMsgRef, {
+      senderId,
+      text:      text || null,
+      mediaUrl,
+      mediaType,
+      ...(replyTo ? { replyTo } : {}),
+      createdAt: Timestamp.now(),
+      expiresAt: Timestamp.fromDate(expiresAt),
+    });
+
+    // ── Update shared daily usage atomically ──────────────────────────────────
+    tx.set(roomRef, {
+      dailyCharUsage: {
+        date:      today,
+        usedChars: usedChars + charCount,
+      },
+    }, { merge: true });
   });
 }
+
 
 // ── Unread Count ──────────────────────────────────────────────────────────────
 
@@ -982,7 +1034,27 @@ export async function sendPushNotification(toUid, { title, body, type = 'default
   }
 }
 
-// (Emergency Chat removed — feature no longer needed)
+/**
+ * Real-time subscription to the shared daily character usage counter.
+ * Both users see identical numbers; fires instantly when either sends a message.
+ *
+ * Callback receives: { date: string, usedChars: number }
+ * If the stored date is stale (new BST day) → usedChars is reported as 0 (auto-reset).
+ */
+export function subscribeToDailyCharUsage(callback) {
+  return onSnapshot(ref('chat', chatRoomId), (snap) => {
+    const today = getBSTDateString();
+    if (!snap.exists()) {
+      callback({ date: today, usedChars: 0 });
+      return;
+    }
+    const usage = snap.data().dailyCharUsage || {};
+    const usedChars = (usage.date === today) ? (usage.usedChars || 0) : 0;
+    callback({ date: today, usedChars });
+  }, (err) => {
+    console.warn('[subscribeToDailyCharUsage] error:', err);
+  });
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // LEADERBOARD
