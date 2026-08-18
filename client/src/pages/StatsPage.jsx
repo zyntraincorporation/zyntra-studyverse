@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   BarChart2, TrendingUp, Calendar, Flame,
-  Brain, Trophy, CheckCircle2,
+  Brain, Trophy, CheckCircle2, Clock,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store';
@@ -169,87 +169,6 @@ function SvgPieChart({ distribution }) {
   );
 }
 
-/* ─── BuetChallengeCalendar ──────────────────────────────────────────────── */
-function BuetChallengeCalendar({ history, stats }) {
-  // Build a map of date → status for the last 30 days
-  const calendarDays = useMemo(() => {
-    const historyMap = {};
-    (history || []).forEach(h => { historyMap[h.date] = h.status; });
-
-    const days = [];
-    const today = new Date();
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
-      const status  = historyMap[dateStr] || 'none';
-      days.push({ date: dateStr, status, day: d.getDay() });
-    }
-    return days;
-  }, [history]);
-
-  // Pad leading days so week starts on Monday (0=Mon...6=Sun)
-  const firstDay  = calendarDays[0]?.day ?? 1;          // JS day: 0=Sun
-  const padCount  = firstDay === 0 ? 6 : firstDay - 1;  // convert to Mon-based
-  const padded    = [...Array(padCount).fill(null), ...calendarDays];
-
-  // Chunk into rows of 7
-  const rows = [];
-  for (let i = 0; i < padded.length; i += 7) rows.push(padded.slice(i, i + 7));
-
-  const statusDot = (status) => {
-    if (status === 'completed') return 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]';
-    if (status === 'missed')    return 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.4)]';
-    return 'bg-white/10 border border-white/10';
-  };
-
-  return (
-    <div className="mt-4">
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 gap-1 mb-1.5">
-        {WEEK_DAYS.map((d, i) => (
-          <div key={i} className="text-center text-[9px] font-semibold text-slate-500 uppercase tracking-widest">{d}</div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
-      <div className="space-y-1">
-        {rows.map((row, ri) => (
-          <div key={ri} className="grid grid-cols-7 gap-1">
-            {row.map((cell, ci) =>
-              cell === null ? (
-                <div key={ci} />
-              ) : (
-                <div
-                  key={ci}
-                  title={`${cell.date} — ${cell.status}`}
-                  className="flex items-center justify-center"
-                >
-                  <div className={`w-5 h-5 rounded-full transition-all cursor-pointer hover:scale-110 ${statusDot(cell.status)}`} />
-                </div>
-              )
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-4 flex-wrap">
-        {[
-          { label: 'Completed', cls: 'bg-emerald-500' },
-          { label: 'Missed',    cls: 'bg-red-500'     },
-          { label: 'No data',   cls: 'bg-white/10 border border-white/10' },
-        ].map(l => (
-          <div key={l.label} className="flex items-center gap-1.5">
-            <div className={`w-2.5 h-2.5 rounded-full ${l.cls}`} />
-            <span className="text-[10px] text-slate-500">{l.label}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /* ─── StatsPage ──────────────────────────────────────────────────────────── */
 export default function StatsPage() {
   const user = useAuthStore(s => s.user);
@@ -383,108 +302,128 @@ export default function StatsPage() {
             </div>
           </div>
 
-          {/* ── Row 4: Activity Heatmap + BUET Daily Challenge ──────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* ── Row 4: Activity Heatmap + BUET Daily Challenge (Balanced Height) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
 
             {/* Activity Heatmap */}
-            <div className="rounded-3xl bg-white/[0.02] border border-white/10 p-6 overflow-hidden">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
-                <Calendar size={16} className="text-cyan-400" /> Activity Heatmap
-              </h3>
-              <p className="text-xs text-slate-500 mb-6">Last 12 weeks of study sessions</p>
-              <HeatmapGrid data={heatmap} />
+            <div className="rounded-3xl bg-white/[0.02] border border-white/10 p-6 flex flex-col justify-between h-full overflow-hidden shadow-sm">
+              <div>
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+                  <Calendar size={16} className="text-cyan-400" /> Activity Heatmap
+                </h3>
+                <p className="text-xs text-slate-500 mb-6">Last 12 weeks of study sessions</p>
+                <HeatmapGrid data={heatmap} />
+              </div>
+              <div className="flex items-center justify-between pt-4 mt-6 border-t border-white/[0.06] text-xs text-slate-400">
+                <span>Total Sessions: <strong className="text-white">{stats?.summary?.totalCompleted || 0}</strong></span>
+                <span>Consistency: <strong className="text-cyan-400">{stats?.streak || 0}d streak</strong></span>
+              </div>
             </div>
 
             {/* BUET Daily Challenge Card */}
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-3xl border border-red-500/20 bg-gradient-to-br from-red-950/30 to-slate-900/50 p-6 flex flex-col overflow-hidden"
+              className="rounded-3xl border border-red-500/20 bg-gradient-to-br from-red-950/30 to-slate-900/50 p-6 flex flex-col justify-between h-full overflow-hidden shadow-sm"
             >
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-0.5">
-                <Brain size={16} className="text-red-400" /> BUET Daily Challenge
-              </h3>
-              <p className="text-xs text-slate-500 mb-4">Last 30 days completion history</p>
-
-              {challengeStats ? (
-                <>
-                  {/* Quick stats row */}
-                  <div className="grid grid-cols-3 gap-2 mb-4">
-                    {[
-                      { icon: '✓', label: 'Completed', value: challengeStats.completed, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
-                      { icon: '✕', label: 'Missed',    value: challengeStats.missed,    color: 'text-red-400',     bg: 'bg-red-500/10 border-red-500/20'         },
-                      { icon: '🎯', label: 'Rate',     value: `${challengeStats.rate}%`, color: 'text-cyan-400',   bg: 'bg-cyan-500/10 border-cyan-500/20'       },
-                    ].map(s => (
-                      <div key={s.label} className={`rounded-2xl border p-2.5 text-center ${s.bg}`}>
-                        <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider mt-0.5">{s.label}</p>
-                      </div>
-                    ))}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white flex items-center gap-2 mb-0.5">
+                      <Brain size={16} className="text-red-400" /> BUET Daily Challenge
+                    </h3>
+                    <p className="text-xs text-slate-500">Last 30 days completion history</p>
                   </div>
+                  <span className="text-[10px] font-mono text-red-400/90 bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 font-bold">
+                    PCM DRILL
+                  </span>
+                </div>
 
-                  {/* Streak pills */}
-                  <div className="flex gap-2 mb-4">
-                    <div className="flex-1 rounded-2xl bg-orange-500/10 border border-orange-500/20 p-2.5 flex items-center gap-2">
-                      <span className="text-lg">🔥</span>
-                      <div>
-                        <p className="text-sm font-black text-orange-400 leading-none">{challengeStats.currentStreak}d</p>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider">Streak</p>
+                {challengeStats ? (
+                  <>
+                    {/* Stats Top 3 Boxes: Completed | Missed | Rate */}
+                    <div className="grid grid-cols-3 gap-2.5 mb-4">
+                      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center flex flex-col justify-center">
+                        <p className="text-xl font-black text-emerald-400">{challengeStats.completed || 0}</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">COMPLETED</p>
+                      </div>
+                      <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-center flex flex-col justify-center">
+                        <p className="text-xl font-black text-red-400">{challengeStats.missed || 0}</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">MISSED</p>
+                      </div>
+                      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-center flex flex-col justify-center">
+                        <p className="text-xl font-black text-cyan-400">{challengeStats.rate || 0}%</p>
+                        <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider mt-0.5">RATE</p>
+                        <p className="text-[9px] text-cyan-400/80 font-mono mt-0.5 font-semibold">
+                          {challengeStats.completed || 0} / {challengeStats.generated || challengeStats.total || 0}
+                        </p>
                       </div>
                     </div>
-                    <div className="flex-1 rounded-2xl bg-yellow-500/10 border border-yellow-500/20 p-2.5 flex items-center gap-2">
-                      <Trophy size={16} className="text-yellow-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-black text-yellow-400 leading-none">{challengeStats.bestStreak}d</p>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider">Best</p>
+
+                    {/* Streak & Time Pills */}
+                    <div className="grid grid-cols-3 gap-2.5 mb-4">
+                      <div className="rounded-2xl bg-orange-500/10 border border-orange-500/20 p-2.5 flex items-center gap-2">
+                        <span className="text-base">🔥</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-orange-400 leading-none">{challengeStats.currentStreak || 0}d</p>
+                          <p className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">STREAK</p>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-yellow-500/10 border border-yellow-500/20 p-2.5 flex items-center gap-2">
+                        <Trophy size={15} className="text-yellow-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-yellow-400 leading-none">{challengeStats.bestStreak || 0}d</p>
+                          <p className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">BEST</p>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl bg-purple-500/10 border border-purple-500/20 p-2.5 flex items-center gap-2">
+                        <Clock size={15} className="text-purple-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-purple-400 leading-none">{challengeStats.totalMinutes || 0}m</p>
+                          <p className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">TIME</p>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex-1 rounded-2xl bg-purple-500/10 border border-purple-500/20 p-2.5 flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-purple-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-black text-purple-400 leading-none">{challengeStats.totalMinutes}m</p>
-                        <p className="text-[9px] text-slate-500 uppercase tracking-wider">Time</p>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Mini calendar heatmap */}
-                  <div className="flex-1">
-                    <BuetChallengeCalendar history={challengeHist} stats={challengeStats} />
-                  </div>
-
-                  {/* Subject breakdown */}
-                  {challengeStats.bySubject && Object.keys(challengeStats.bySubject).length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-white/[0.06]">
-                      <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wider">Subject Breakdown</p>
-                      <div className="space-y-2">
-                        {Object.entries(challengeStats.bySubject).map(([subj, data]) => {
-                          const pct   = data.total > 0 ? Math.round((data.completed / data.total) * 100) : 0;
+                    {/* Subject Breakdown Progress Bars */}
+                    <div className="mt-2 pt-3.5 border-t border-white/[0.08]">
+                      <p className="text-[10px] text-slate-400 mb-2.5 font-bold uppercase tracking-wider">SUBJECT BREAKDOWN</p>
+                      <div className="space-y-2.5">
+                        {['Math', 'Physics', 'Chemistry'].map(subj => {
+                          const data = challengeStats.bySubject?.[subj] || { completed: 0, total: 0 };
+                          const completedCount = data.completed || 0;
+                          const totalCount = data.total || 0;
+                          const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
                           const color = SUBJECT_COLOR[subj] || SUBJECT_COLOR.default;
+
                           return (
-                            <div key={subj} className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-400 w-16 shrink-0">{subj}</span>
-                              <div className="flex-1 h-1.5 rounded-full bg-white/5 overflow-hidden">
-                                <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+                            <div key={subj} className="space-y-1">
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-semibold text-slate-300">{subj}</span>
+                                <span className="font-mono text-[11px] text-slate-400 font-bold">{completedCount}/{totalCount}</span>
                               </div>
-                              <span className="text-[10px] text-slate-400 w-12 text-right shrink-0 font-mono">{data.completed}/{data.total}</span>
+                              <div className="h-2 rounded-full bg-white/5 overflow-hidden border border-white/5">
+                                <motion.div
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${pct}%` }}
+                                  transition={{ duration: 0.8, ease: 'easeOut' }}
+                                  className="h-full rounded-full"
+                                  style={{ backgroundColor: color }}
+                                />
+                              </div>
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  )}
-
-                  {challengeStats.total === 0 && (
-                    <p className="text-sm text-slate-500 text-center py-4">
-                      No challenges yet — open the dashboard to get your first one!
-                    </p>
-                  )}
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center">
-                  <p className="text-sm text-slate-500">Challenge data unavailable</p>
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <p className="text-sm text-slate-400 mb-1">কোনো চ্যালেঞ্জের তথ্য পাওয়া যায়নি</p>
+                    <p className="text-xs text-slate-500">ড্যাশবোর্ড থেকে প্রথম চ্যালেঞ্জ তৈরি করুন!</p>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </div>
         </div>

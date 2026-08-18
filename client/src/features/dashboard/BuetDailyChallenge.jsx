@@ -336,40 +336,51 @@ export default function BuetDailyChallenge() {
         </div>
       </div>
 
-      {/* Title */}
-      <h3 className="text-sm font-bold text-white mb-1 leading-snug">
-        🔥 {challenge.title}
-      </h3>
+      {/* Highlighted Core Challenge Banner */}
+      <div className="rounded-xl bg-black/40 border border-amber-500/25 p-3.5 mb-3 shadow-[0_0_15px_rgba(245,158,11,0.06)] relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-amber-500/10 to-transparent rounded-full blur-xl pointer-events-none" />
+        
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-amber-400" /> আজকের নির্ধারিত টাস্ক
+          </span>
+        </div>
 
-      {/* Description */}
-      <p className="text-xs text-slate-300 mb-3 leading-relaxed">
-        {challenge.description}
-      </p>
+        {/* Title */}
+        <h3 className="text-sm font-black text-amber-100 mb-1.5 leading-snug">
+          🔥 {challenge.title}
+        </h3>
 
-      {/* Chapter reference */}
-      {challenge.chapterRef && (
-        <p className="text-[11px] text-slate-400 mb-2.5 flex items-center gap-1.5">
-          <BookOpen className="w-3 h-3 text-cyan-400 shrink-0" />
-          <span className="truncate">{challenge.chapterRef}</span>
+        {/* Description */}
+        <p className="text-xs text-slate-200 leading-relaxed font-medium">
+          {challenge.description}
         </p>
-      )}
+
+        {/* Chapter reference */}
+        {challenge.chapterRef && (
+          <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center gap-1.5 text-[11px] text-cyan-300">
+            <BookOpen className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="font-semibold truncate">{challenge.chapterRef}</span>
+          </div>
+        )}
+      </div>
 
       {/* Meta: duration + target */}
-      <div className="flex items-center gap-3 mb-3 text-[11px] text-slate-300">
-        <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2 mb-3 text-[11px] text-slate-300 flex-wrap">
+        <div className="flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
           <Clock className="w-3 h-3 text-slate-400" />
-          <span>{challenge.durationMinutes} min</span>
+          <span>{challenge.durationMinutes} মি. টার্গেট</span>
         </div>
         {challenge.targetProblems && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
             <BarChart2 className="w-3 h-3 text-slate-400" />
-            <span>{challenge.targetProblems} problems</span>
+            <span>{challenge.targetProblems}টি সমস্যা</span>
           </div>
         )}
         {challenge.targetAccuracy && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
             <CheckCircle2 className="w-3 h-3 text-slate-400" />
-            <span>{challenge.targetAccuracy}% accuracy</span>
+            <span>{challenge.targetAccuracy}% নির্ভুলতা</span>
           </div>
         )}
       </div>

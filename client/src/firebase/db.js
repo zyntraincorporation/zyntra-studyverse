@@ -1722,68 +1722,51 @@ export async function getCheckinCenterStats(userId, days = 30) {
 // BUET DAILY CHALLENGE — Pure Firebase + OpenRouter AI (Isolated System)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const BUET_AI_SYSTEM_PROMPT = `You are the BUET Daily Challenge Generator for Zyntra StudyVerse.
+const BUET_AI_SYSTEM_PROMPT = `তুমি Zyntra StudyVerse-এর জন্য Saiful-এর ডেডিকেটেড BUET Daily Challenge Generator।
+তোমার একমাত্র কাজ: Saiful-এর জন্য প্রতিদিন ঠিক একটি (১টি) হাই-ইল্ড, প্রিসাইজ ও কার্যকর BUET অ্যাডমিশন চ্যালেঞ্জ তৈরি করা।
 
-Your ONLY job: generate exactly ONE concise, useful BUET-focused daily challenge for the student.
+━━━ SAIFUL-এর প্রোফাইল ও লক্ষ্য ━━━
+• নাম: সাইফুল (Saiful) | ব্যাচ: HSC 2027
+• ডাবল গোল (Double Goal): 
+  ১. HSC-এ Golden A+ (GPA 5.00 — সব বিষয়ে A+)
+  ২. BUET Admission Test — অক্টোবর ২০২৭ (টপ র‍্যাংক নিশ্চিত করা)
+• সিলেবাস চ্যালেঞ্জ: ৩১ ডিসেম্বর ২০২৬-এর মধ্যে ফুল সিলেবাস কমপ্লিট করা
+• HSC বোর্ড পরীক্ষা: ১৫ মার্চ ২০২৭
+• BUET রিয়ালিটি: ৬০০ নম্বরের লিখিত পরীক্ষা, ৬০টি প্রশ্ন, ৩ ঘন্টা (প্রতি প্রশ্নে মাত্র ৩ মিনিট)। ৩০-৩৫টি নির্ভুল সমাধান চান্স এনে দেয়।
+• ট্রিপল ব্যালেন্স: Physics = Chemistry = Math (সমান গুরুত্ব)। রসায়ন চ্যাপ্টার ৭ (জৈব যৌগ) ও গণিতের ক্যালকুলাস/কনিক্স/স্থিতি-গতিবিদ্যা সবচেয়ে বড় ফাঁদ।
+• প্রস্তুতি পদ্ধতি: কনসেপ্ট ক্লিয়ার → মেইন বুক এক্সারসাইজ → ইঞ্জিনিয়ারিং কোশ্চেন ব্যাংক (QB) বারবার প্র্যাকটিস → ক্যালকুলেটর ট্রিকস ও দ্রুত হিসাব।
 
-━━━ STUDENT PROFILE ━━━
-Name: Saiful | Batch: HSC 2027
-Timeline Milestones:
-1. Full Syllabus Completion Target: December 31, 2026 (Personal challenge: complete all HSC subjects early)
-2. HSC Board Exam: March 15, 2027
-3. Final Goal: BUET Admission Test in October 2027
-BUET subjects: Physics (1st+2nd paper), Chemistry (1st+2nd paper), Higher Math (1st+2nd paper)
+━━━ সিলেবাস গাইডলাইন (PCM) ━━━
+পদার্থবিজ্ঞান ১ম পত্র: ভৌত জগত ও পরিমাপ, ভেক্টর, গতিবিদ্যা, নিউটনিয়ান বলবিদ্যা ও মহাকর্ষ, কাজ শক্তি ও ক্ষমতা, মহাকর্ষ ও অভিকর্ষ, পদার্থের গাঠনিক ধর্ম, পর্যাবৃত্ত গতি, তরঙ্গ, আদর্শ গ্যাস ও গ্যাসের গতিতত্ত্ব।
+পদার্থবিজ্ঞান ২য় পত্র: তাপগতিবিদ্যা, স্থির তড়িৎ, চল তড়িৎ, তড়িৎ প্রবাহের চৌম্বক ক্রিয়া, তাড়িতচৌম্বক আবেশ ও পরিবর্তী প্রবাহ, জ্যামিতিক আলোকবিজ্ঞান, ভৌত আলোকবিজ্ঞান, আধুনিক পদার্থবিজ্ঞানের সূচনা, পরমাণু মডেল ও নিউক্লিয়ার পদার্থবিজ্ঞান, সেমিকন্ডাক্টর ও ইলেকট্রনিক্স।
+রসায়ন ১ম পত্র: ল্যাবরেটরির নিরাপদ ব্যবহার, গুণগত রসায়ন, পর্যায়বৃত্ত ধর্ম ও রাসায়নিক বন্ধন, রাসায়নিক পরিবর্তন, কর্মমুখী রসায়ন।
+রসায়ন ২য় পত্র: পরিবেশ রসায়ন, জৈব রসায়ন (Ch7 - মোস্ট ক্রুশিয়াল), পরিমাণগত রসায়ন, তড়িৎ রসায়ন, অর্থনৈতিক রসায়ন।
+উচ্চতর গণিত ১ম পত্র: ম্যাট্রিক্স ও নির্ণায়ক, ভেক্টর, সরলরেখা, বৃত্ত, বিন্যাস ও সমাবেশ, ত্রিকোণমিতিক অনুপাত, সংযুক্ত কোণের ত্রিকোণমিতিক অনুপাত, ফাংশন ও ফাংশনের লেখচিত্র, অন্তরীকরণ, যোগজীকরণ।
+উচ্চতর গণিত ২য় পত্র: বাস্তব সংখ্যা ও অসমতা, দ্বিপদী বিন্যাস, জটিল সংখ্যা, বহুপদী ও বহুপদী সমীকরণ, কনিক, বিপরীত ত্রিকোণমিতিক ফাংশন ও ত্রিকোণমিতিক সমীকরণ, স্থিতিবিদ্যা, গতিবিদ্যা, সম্ভাবনা।
 
-━━━ BUET PCM CHAPTER OVERVIEW ━━━
-Physics 1st Paper (Ch1–10): Physical World & Measurement, Vectors, Dynamics, Newton's Laws & Gravitation,
-  Work Energy & Power, Momentum & Collisions, Circular Motion, Simple Harmonic Motion & Oscillation,
-  Waves & Sound, Ideal Gas & Kinetic Theory
-Physics 2nd Paper (Ch11–21): Thermodynamics, Electrostatics, Electric Current & Circuits,
-  Magnetic Effects, Electromagnetic Induction, AC Circuits, Electromagnetic Waves,
-  Geometric Optics, Wave Optics, Modern Physics, Semiconductor & Electronics
-Chemistry 1st Paper (Ch1–5): Analytical Chemistry, Qualitative Analysis, Periodic Table,
-  Organic Chemistry Intro, States of Matter
-Chemistry 2nd Paper (Ch6–11): Chemical Reactions, Electrochemistry, Physical Chemistry Calculations,
-  Environmental Chemistry, Polymers & Materials, Nuclear Chemistry
-Math 1st Paper (Ch1–10): Matrices, Complex Numbers, Trigonometry, Coordinate Geometry 2D,
-  Binomial Theorem, Functions & Calculus Intro, Differentiation, Integration,
-  Differential Equations, Statistics & Probability
-Math 2nd Paper (Ch11–20): 3D Coordinate Geometry, Vectors, Conic Sections (Parabola/Ellipse/Hyperbola),
-  Trigonometric Equations, Inverse Trig, Statics, Dynamics, Numerical Methods
+━━━ চ্যালেঞ্জের ধরন (CHALLENGE TYPES) ━━━
+- speed_math: ক্যালকুলেটর শর্টকাট বা দ্রুত হিসাবের মাধ্যমে নির্দিষ্ট সময়ে সমস্যা সমাধান
+- formula_recall: স্মৃতি থেকে চ্যাপ্টারের মূল সূত্র ও শর্তাবলি লেখা এবং যাচাই
+- concept_drill: ট্রিকি ও গভীর তাত্ত্বিক প্রশ্ন এবং ফাঁদ এড়ানোর অনুশীলন
+- mcq_sprint: কঠোর সময়ের চাপে BUET প্রিলিমিনারি স্টাইলের স্প্রিন্ট
+- calculation_tricks: বড় সমীকরণ দ্রুত অনুমানের মাধ্যমে সমাধান কৌশল
+- mixed: একাধিক বিষয় বা চ্যাপ্টারের সমন্বয়ে তৈরি চ্যালেঞ্জ
 
-━━━ CHALLENGE TYPES (rotate intelligently, never repeat same type consecutively) ━━━
-- speed_math: Solve N problems quickly using mental math or calculator tricks
-- formula_recall: Recall + write all formulas for a chapter from memory, then verify
-- concept_drill: Answer 15–20 quick concept questions (define/explain/differentiate)
-- mcq_sprint: Solve MCQ problems under strict time pressure (BUET-style)
-- calculation_tricks: Practice shortcut calculation methods for specific problem types
-- mixed: Combined PCM challenge drawing from multiple subjects
+━━━ কঠোর নির্দেশাবলি ━━━
+১. ভাষা: সম্পূর্ণ বাংলায় লিখবে (title, description, chapterRef সবকিছু স্পষ্ট এবং সাবলীল বাংলা ভাষায় হবে)।
+২. সুনির্দিষ্ট ও এক সিটিং-এ সমাধানযোগ্য কাজ দেবে (duration: 30, 45, বা 60 মিনিট)।
+৩. JSON ফরম্যাটের বাইরে কোনো অতিরিক্ত টেক্সট বা মার্কডাউন দেবে না।
 
-━━━ PERSONALIZATION RULES ━━━
-- Look at chapter statuses: prioritize recently completed chapters (formula_recall/concept_drill)
-- Look at in_progress chapters: give speed_math or concept_drill to reinforce
-- Look at untouched chapters: do NOT give challenges for chapters not yet started
-- Avoid repeating same subject 3+ days in a row — use the recent history
-- Always prefer chapters that are "completed" or "in_progress" — never chapters "not_started"
-- If all chapters are not_started in a subject, pick Mixed or Math speed_math instead
-
-━━━ CHALLENGE SIZE RULES ━━━
-- Duration: 30min (easy) | 45min (normal) | 60min (intense)
-- Problems: 20–30 (short) | 30–50 (normal) — only for speed_math/mcq_sprint
-- Accuracy target: 70–80% — only for mcq_sprint/mixed
-- Keep it achievable in ONE sitting — no multi-session challenges
-
-━━━ STRICT OUTPUT FORMAT ━━━
-Respond with ONLY a valid JSON object. No markdown backticks, no explanation, no extra text.
+━━━ STRICT JSON OUTPUT FORMAT ━━━
 {
-  "title": "Short punchy title (max 8 words)",
-  "description": "What the student should do — 1-2 clear sentences",
+  "title": "বাংলায় ছোট আকর্ষণীয় শিরোনাম (সর্বোচ্চ ৮ শব্দ, যেমন: ⚡ স্পিড ড্রিল: অন্তরীকরণ ও স্পর্শক)",
+  "description": "বাংলায় স্পষ্ট কাজের নির্দেশ — কী করবে এবং কীভাবে দ্রুত সমাধান করবে (১-২ বাক্য)",
   "challengeType": "speed_math|formula_recall|concept_drill|mcq_sprint|calculation_tricks|mixed",
   "subject": "Physics|Chemistry|Math|Mixed",
-  "durationMinutes": 30|45|60,
-  "targetAccuracy": null or integer 70-80,
-  "targetProblems": null or integer,
-  "chapterRef": "Subject Paper — Ch# ChapterName or null"
+  "durationMinutes": 30,
+  "targetAccuracy": 75,
+  "targetProblems": 25,
+  "chapterRef": "বাংলায় চ্যাপ্টারের নাম (যেমন: উচ্চতর গণিত ১ম পত্র — অধ্যায় ৯: অন্তরীকরণ)"
 }`;
 
 export async function getBuetDailyChallenge(uid, date) {
@@ -1928,10 +1911,10 @@ export async function getBuetChallengeStats(uid) {
     const snap = await getDocs(q);
     const all = snap.docs.map(d => d.data());
 
-    const total = all.length;
+    const generated = all.length;
     const completed = all.filter(c => c.status === 'completed').length;
-    const missed = all.filter(c => c.status === 'missed').length;
-    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const missed    = Math.max(0, generated - completed);
+    const rate      = generated > 0 ? Math.round((completed / generated) * 100) : 0;
     const totalMinutes = Math.round(
       all.filter(c => c.status === 'completed')
          .reduce((acc, c) => acc + (c.elapsedSeconds || (c.durationMinutes * 60)), 0) / 60
@@ -1961,14 +1944,19 @@ export async function getBuetChallengeStats(uid) {
     }
 
     return {
-      total, completed, missed, rate,
-      totalMinutes, currentStreak,
+      total: generated,
+      generated,
+      completed,
+      missed,
+      rate,
+      totalMinutes,
+      currentStreak,
       bestStreak: Math.max(bestStreak, currentStreak),
       bySubject,
     };
   } catch (err) {
     console.error('[BUET Challenge] Stats error:', err.message);
-    return { total: 0, completed: 0, missed: 0, rate: 0, totalMinutes: 0, currentStreak: 0, bestStreak: 0, bySubject: {} };
+    return { total: 0, generated: 0, completed: 0, missed: 0, rate: 0, totalMinutes: 0, currentStreak: 0, bestStreak: 0, bySubject: {} };
   }
 }
 
