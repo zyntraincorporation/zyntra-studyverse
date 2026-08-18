@@ -1717,3 +1717,256 @@ export async function getCheckinCenterStats(userId, days = 30) {
     weeklyMatrix,
   };
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// BUET DAILY CHALLENGE — Pure Firebase + OpenRouter AI (Isolated System)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const BUET_AI_SYSTEM_PROMPT = `You are the BUET Daily Challenge Generator for Zyntra StudyVerse.
+
+Your ONLY job: generate exactly ONE concise, useful BUET-focused daily challenge for the student.
+
+━━━ STUDENT PROFILE ━━━
+Name: Saiful | Batch: HSC 2027
+Timeline Milestones:
+1. Full Syllabus Completion Target: December 31, 2026 (Personal challenge: complete all HSC subjects early)
+2. HSC Board Exam: March 15, 2027
+3. Final Goal: BUET Admission Test in October 2027
+BUET subjects: Physics (1st+2nd paper), Chemistry (1st+2nd paper), Higher Math (1st+2nd paper)
+
+━━━ BUET PCM CHAPTER OVERVIEW ━━━
+Physics 1st Paper (Ch1–10): Physical World & Measurement, Vectors, Dynamics, Newton's Laws & Gravitation,
+  Work Energy & Power, Momentum & Collisions, Circular Motion, Simple Harmonic Motion & Oscillation,
+  Waves & Sound, Ideal Gas & Kinetic Theory
+Physics 2nd Paper (Ch11–21): Thermodynamics, Electrostatics, Electric Current & Circuits,
+  Magnetic Effects, Electromagnetic Induction, AC Circuits, Electromagnetic Waves,
+  Geometric Optics, Wave Optics, Modern Physics, Semiconductor & Electronics
+Chemistry 1st Paper (Ch1–5): Analytical Chemistry, Qualitative Analysis, Periodic Table,
+  Organic Chemistry Intro, States of Matter
+Chemistry 2nd Paper (Ch6–11): Chemical Reactions, Electrochemistry, Physical Chemistry Calculations,
+  Environmental Chemistry, Polymers & Materials, Nuclear Chemistry
+Math 1st Paper (Ch1–10): Matrices, Complex Numbers, Trigonometry, Coordinate Geometry 2D,
+  Binomial Theorem, Functions & Calculus Intro, Differentiation, Integration,
+  Differential Equations, Statistics & Probability
+Math 2nd Paper (Ch11–20): 3D Coordinate Geometry, Vectors, Conic Sections (Parabola/Ellipse/Hyperbola),
+  Trigonometric Equations, Inverse Trig, Statics, Dynamics, Numerical Methods
+
+━━━ CHALLENGE TYPES (rotate intelligently, never repeat same type consecutively) ━━━
+- speed_math: Solve N problems quickly using mental math or calculator tricks
+- formula_recall: Recall + write all formulas for a chapter from memory, then verify
+- concept_drill: Answer 15–20 quick concept questions (define/explain/differentiate)
+- mcq_sprint: Solve MCQ problems under strict time pressure (BUET-style)
+- calculation_tricks: Practice shortcut calculation methods for specific problem types
+- mixed: Combined PCM challenge drawing from multiple subjects
+
+━━━ PERSONALIZATION RULES ━━━
+- Look at chapter statuses: prioritize recently completed chapters (formula_recall/concept_drill)
+- Look at in_progress chapters: give speed_math or concept_drill to reinforce
+- Look at untouched chapters: do NOT give challenges for chapters not yet started
+- Avoid repeating same subject 3+ days in a row — use the recent history
+- Always prefer chapters that are "completed" or "in_progress" — never chapters "not_started"
+- If all chapters are not_started in a subject, pick Mixed or Math speed_math instead
+
+━━━ CHALLENGE SIZE RULES ━━━
+- Duration: 30min (easy) | 45min (normal) | 60min (intense)
+- Problems: 20–30 (short) | 30–50 (normal) — only for speed_math/mcq_sprint
+- Accuracy target: 70–80% — only for mcq_sprint/mixed
+- Keep it achievable in ONE sitting — no multi-session challenges
+
+━━━ STRICT OUTPUT FORMAT ━━━
+Respond with ONLY a valid JSON object. No markdown backticks, no explanation, no extra text.
+{
+  "title": "Short punchy title (max 8 words)",
+  "description": "What the student should do — 1-2 clear sentences",
+  "challengeType": "speed_math|formula_recall|concept_drill|mcq_sprint|calculation_tricks|mixed",
+  "subject": "Physics|Chemistry|Math|Mixed",
+  "durationMinutes": 30|45|60,
+  "targetAccuracy": null or integer 70-80,
+  "targetProblems": null or integer,
+  "chapterRef": "Subject Paper — Ch# ChapterName or null"
+}`;
+
+export async function getBuetDailyChallenge(uid, date) {
+  if (!uid || !date) return null;
+  const snap = await getDoc(doc(db, 'users', uid, 'buetDailyChallenges', date));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function generateBuetDailyChallenge(uid, date, pcmChapters = []) {
+  if (!uid || !date) throw new Error('User ID and date required');
+
+  // Check if challenge already exists for this date in Firestore
+  const existing = await getBuetDailyChallenge(uid, date);
+  if (existing) return existing;
+
+  // Retrieve recent challenges from Firestore to avoid repetition
+  let recentChallenges = [];
+  try {
+    const q = query(
+      collection(db, 'users', uid, 'buetDailyChallenges'),
+      orderBy('date', 'desc'),
+      limit(7)
+    );
+    const snap = await getDocs(q);
+    recentChallenges = snap.docs.map(d => d.data());
+  } catch (err) {
+    console.warn('[BUET Challenge] Could not fetch recent challenges:', err.message);
+  const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error('VITE_OPENROUTER_API_KEY is not configured in environment variables');
+  }
+
+  const userPrompt = `Student: Saiful | Target: BUET Admission 2027
+Date: ${date}
+Current PCM Progress summary: ${JSON.stringify(pcmChapters.slice(0, 10))}
+Recent 7 Days Challenges (do not duplicate):
+${recentChallenges.map(c => `${c.date}: [${c.subject}] ${c.challengeType} — "${c.title}"`).join('\n') || 'None'}
+
+Generate today's BUET Daily Challenge JSON now.`;
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json',
+      'HTTP-Referer':  'https://zyntra-studyverse.netlify.app',
+      'X-Title':       'ZYNTRA StudyVerse',
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-4o-mini',
+      messages: [
+        { role: 'system', content: BUET_AI_SYSTEM_PROMPT },
+        { role: 'user',   content: userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 500,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`OpenRouter error ${res.status}: ${errText}`);
+  }
+
+  const data = await res.json();
+  const rawText = data.choices?.[0]?.message?.content;
+  if (!rawText) throw new Error('Empty AI response');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch {
+    const match = rawText.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Invalid JSON from AI');
+    parsed = JSON.parse(match[0]);
+  }
+
+  const challengeData = {
+    date,
+    title:           String(parsed.title || 'BUET Daily Challenge'),
+    description:     String(parsed.description || 'Solve today\'s problems with calculator/speed efficiency.'),
+    challengeType:   String(parsed.challengeType || 'mixed'),
+    subject:         String(parsed.subject || 'Mixed'),
+    durationMinutes: Number(parsed.durationMinutes || 45),
+    targetAccuracy:  parsed.targetAccuracy != null ? Number(parsed.targetAccuracy) : 75,
+    targetProblems:  parsed.targetProblems != null ? Number(parsed.targetProblems) : 25,
+    chapterRef:      parsed.chapterRef != null ? String(parsed.chapterRef) : null,
+    status:          'pending',
+    startedAt:       null,
+    completedAt:     null,
+    elapsedSeconds:  null,
+    createdAt:       new Date().toISOString(),
+  };
+
+  await setDoc(doc(db, 'users', uid, 'buetDailyChallenges', date), challengeData);
+  return { id: date, ...challengeData };
+}
+
+export async function startBuetDailyChallenge(uid, date) {
+  if (!uid || !date) return;
+  const challengeRef = doc(db, 'users', uid, 'buetDailyChallenges', date);
+  const snap = await getDoc(challengeRef);
+  if (!snap.exists()) return;
+  const current = snap.data();
+  if (current.status !== 'pending') return current;
+
+  const update = {
+    status: 'started',
+    startedAt: new Date().toISOString(),
+  };
+  await updateDoc(challengeRef, update);
+  return { ...current, ...update };
+}
+
+export async function completeBuetDailyChallenge(uid, date, elapsedSeconds) {
+  if (!uid || !date) return;
+  const challengeRef = doc(db, 'users', uid, 'buetDailyChallenges', date);
+  const snap = await getDoc(challengeRef);
+  if (!snap.exists()) return;
+  const current = snap.data();
+
+  const update = {
+    status: 'completed',
+    completedAt: new Date().toISOString(),
+    elapsedSeconds: elapsedSeconds ? Number(elapsedSeconds) : null,
+    startedAt: current.startedAt || new Date().toISOString(),
+  };
+  await updateDoc(challengeRef, update);
+  return { ...current, ...update };
+}
+
+export async function getBuetChallengeStats(uid) {
+  if (!uid) return { total: 0, completed: 0, missed: 0, rate: 0, totalMinutes: 0, currentStreak: 0, bestStreak: 0, bySubject: {} };
+  
+  try {
+    const q = query(
+      collection(db, 'users', uid, 'buetDailyChallenges'),
+      orderBy('date', 'asc')
+    );
+    const snap = await getDocs(q);
+    const all = snap.docs.map(d => d.data());
+
+    const total = all.length;
+    const completed = all.filter(c => c.status === 'completed').length;
+    const missed = all.filter(c => c.status === 'missed').length;
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const totalMinutes = Math.round(
+      all.filter(c => c.status === 'completed')
+         .reduce((acc, c) => acc + (c.elapsedSeconds || (c.durationMinutes * 60)), 0) / 60
+    );
+
+    // Calculate streak
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let tempStreak = 0;
+    for (const c of all) {
+      if (c.status === 'completed') {
+        tempStreak++;
+        if (tempStreak > bestStreak) bestStreak = tempStreak;
+      } else {
+        tempStreak = 0;
+      }
+    }
+    currentStreak = tempStreak;
+
+    // Subject breakdown
+    const bySubject = {};
+    for (const c of all) {
+      const s = c.subject || 'Mixed';
+      if (!bySubject[s]) bySubject[s] = { total: 0, completed: 0 };
+      bySubject[s].total++;
+      if (c.status === 'completed') bySubject[s].completed++;
+    }
+
+    return {
+      total, completed, missed, rate,
+      totalMinutes, currentStreak,
+      bestStreak: Math.max(bestStreak, currentStreak),
+      bySubject,
+    };
+  } catch (err) {
+    console.error('[BUET Challenge] Stats error:', err.message);
+    return { total: 0, completed: 0, missed: 0, rate: 0, totalMinutes: 0, currentStreak: 0, bestStreak: 0, bySubject: {} };
+  }
+}
+

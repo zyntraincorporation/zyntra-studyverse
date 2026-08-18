@@ -4,8 +4,7 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION     = "20"
-  VITE_API_BASE_URL = "https://zyntra-api.onrender.com"
+  NODE_VERSION = "20"
 
 # Netlify Functions directory (one level up from client)
 [functions]

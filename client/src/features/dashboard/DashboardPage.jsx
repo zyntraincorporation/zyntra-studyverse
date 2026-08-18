@@ -541,7 +541,7 @@ export default function DashboardPage() {
                 <ArcGauge pct={hscOverall} color="#10b981" size={100} label="Overall" sublabel="all subjects" />
               </div>
               <div className="flex-1 space-y-2">
-                <p className="text-xs text-white/30 leading-relaxed">Complete all 10 HSC subjects to be exam-ready by December 2026.</p>
+                <p className="text-xs text-white/30 leading-relaxed">Complete all 10 HSC subjects by December 2026 for HSC Exam in March 2027.</p>
                 <div className="flex gap-3">
                   <div className="text-center">
                     <p className="text-sm font-black text-emerald-400">{hscDone}</p>

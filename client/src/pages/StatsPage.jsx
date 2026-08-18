@@ -5,8 +5,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store';
-import { getWeeklyStats, getHeatmapData } from '../firebase/db';
-import { challengeAPI } from '../lib/api';
+import { getWeeklyStats, getHeatmapData, getBuetChallengeStats } from '../firebase/db';
 import { formatDuration } from '../lib/bst';
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
@@ -276,19 +275,13 @@ export default function StatsPage() {
     }).catch(() => setLoading(false));
   }, [user?.uid, period]);
 
-  // Challenge stats + history
+  // Challenge stats
   useEffect(() => {
-    Promise.all([
-      challengeAPI.getStats(),
-      challengeAPI.getHistory(),
-    ]).then(([s, h]) => {
-      setChallengeStats(s.data);
-      setChallengeHist(h.data || []);
-    }).catch(() => {
-      setChallengeStats(null);
-      setChallengeHist([]);
-    });
-  }, []);
+    if (!user?.uid) return;
+    getBuetChallengeStats(user.uid)
+      .then(s => setChallengeStats(s))
+      .catch(() => setChallengeStats(null));
+  }, [user?.uid]);
 
   return (
     <div className="p-4 lg:p-6 max-w-5xl mx-auto space-y-6 pb-24 overflow-x-hidden">

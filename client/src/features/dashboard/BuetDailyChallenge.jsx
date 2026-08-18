@@ -9,7 +9,14 @@ import {
   BarChart2, BookOpen, Calculator, FlaskConical,
   ChevronRight, Play, Trophy, Sparkles, RefreshCw, AlertCircle
 } from 'lucide-react';
-import { challengeAPI } from '../../lib/api';
+import { useAuthStore } from '../../store';
+import {
+  getBuetDailyChallenge,
+  generateBuetDailyChallenge,
+  startBuetDailyChallenge,
+  completeBuetDailyChallenge,
+  getChapters,
+} from '../../firebase/db';
 import { getChallengeCycleDate } from '../../lib/bst';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -119,6 +126,7 @@ function MissedCard({ challenge }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function BuetDailyChallenge() {
+  const user = useAuthStore(s => s.user);
   const [challenge,    setChallenge]    = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [generating,   setGenerating]   = useState(false);
@@ -129,32 +137,39 @@ export default function BuetDailyChallenge() {
   const timerRef  = useRef(null);
   const cycleDate = getChallengeCycleDate();
 
-  // ── Fetch today's challenge ─────────────────────────────────────────────────
+  // ── Fetch today's challenge from Firestore ─────────────────────────────────
   const fetchChallenge = async (silent = false) => {
+    if (!user?.uid) return;
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const res = await challengeAPI.getToday();
-      if (res.data) {
-        setChallenge(res.data);
-        if (res.data.status === 'started' && res.data.startedAt) {
-          const startedAt = new Date(res.data.startedAt).getTime();
+      const data = await getBuetDailyChallenge(user.uid, cycleDate);
+      if (data) {
+        setChallenge(data);
+        if (data.status === 'started' && data.startedAt) {
+          const startedAt = new Date(data.startedAt).getTime();
           const elapsedSoFar = Math.floor((Date.now() - startedAt) / 1000);
           setElapsed(Math.max(0, elapsedSoFar));
           setTimerActive(true);
         }
+      } else {
+        setChallenge(null);
       }
     } catch (err) {
-      console.warn('[BuetDailyChallenge] Fetch warning:', err.response?.data?.error || err.message);
-      setError(err.response?.data?.error || err.message);
+      console.warn('[BuetDailyChallenge] Fetch warning:', err.message);
+      setError(err.message);
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchChallenge();
-  }, []);
+    if (user?.uid) {
+      fetchChallenge();
+    } else {
+      setLoading(false);
+    }
+  }, [user?.uid]);
 
   // ── Timer tick ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -166,20 +181,28 @@ export default function BuetDailyChallenge() {
     return () => clearInterval(timerRef.current);
   }, [timerActive, challenge?.status]);
 
-  // ── Manual Generate Trigger ─────────────────────────────────────────────────
+  // ── Manual Generate Trigger via Client OpenRouter + Firestore ───────────────
   const handleGenerate = async () => {
+    if (!user?.uid) return;
     setGenerating(true);
     setError(null);
     try {
-      const res = await challengeAPI.generateNow();
-      if (res.data?.challenge) {
-        setChallenge(res.data.challenge);
-      } else {
-        await fetchChallenge(true);
+      // Get PCM chapters to provide context to AI
+      let pcmChapters = [];
+      try {
+        const allChapters = await getChapters(user.uid);
+        pcmChapters = (allChapters || []).filter(c => 
+          ['Physics', 'Chemistry', 'Math', 'Physics1', 'Physics2', 'Chemistry1', 'Chemistry2', 'Math1', 'Math2'].includes(c.subject)
+        );
+      } catch (e) {
+        console.warn('Could not load chapters for AI context:', e.message);
       }
+
+      const newChallenge = await generateBuetDailyChallenge(user.uid, cycleDate, pcmChapters);
+      setChallenge(newChallenge);
     } catch (err) {
       console.error('[BuetDailyChallenge] Generate error:', err.message);
-      setError(err.response?.data?.error || err.message);
+      setError(err.message);
     } finally {
       setGenerating(false);
     }
@@ -187,10 +210,10 @@ export default function BuetDailyChallenge() {
 
   // ── Start challenge ─────────────────────────────────────────────────────────
   const handleStart = async () => {
-    if (!challenge) return;
+    if (!challenge || !user?.uid) return;
     try {
-      const res = await challengeAPI.start(challenge.date);
-      setChallenge(res.data);
+      const updated = await startBuetDailyChallenge(user.uid, challenge.date);
+      if (updated) setChallenge(updated);
       setTimerActive(true);
       setElapsed(0);
     } catch (err) {
@@ -200,13 +223,13 @@ export default function BuetDailyChallenge() {
 
   // ── Complete challenge ──────────────────────────────────────────────────────
   const handleComplete = async () => {
-    if (completing || !challenge) return;
+    if (completing || !challenge || !user?.uid) return;
     setCompleting(true);
     clearInterval(timerRef.current);
     setTimerActive(false);
     try {
-      const res = await challengeAPI.complete(challenge.date, elapsed);
-      setChallenge(res.data);
+      const updated = await completeBuetDailyChallenge(user.uid, challenge.date, elapsed);
+      if (updated) setChallenge(updated);
     } catch (err) {
       console.error('[BuetDailyChallenge] Complete error:', err.message);
       setTimerActive(true);
@@ -234,7 +257,7 @@ export default function BuetDailyChallenge() {
 
         <p className="text-xs text-slate-300 mb-3 leading-relaxed">
           {error 
-            ? 'সার্ভারের সাথে সংযোগ মেলেনি বা আজকের চ্যালেঞ্জ তৈরি হয়নি।'
+            ? 'চ্যালেঞ্জ লোড করা যায়নি — নিচের বাটনে ক্লিক করে নতুন চ্যালেঞ্জ তৈরি করুন।'
             : 'আজকের জন্য এখনো কোনো BUET চ্যালেঞ্জ তৈরি করা হয়নি (প্রতিদিন ১টি চ্যালেঞ্জ)।'}
         </p>
 
