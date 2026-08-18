@@ -12,11 +12,11 @@ import { useYesterdayWords } from '../hooks/vocabulary/useVocabularyWords';
 import { useAuthStore } from '../store';
 
 const TABS = [
-  { id: 'forge',     label: 'Word Forge',    icon: '⚡' },
-  { id: 'recall',    label: 'Recall Arena',  icon: '🎯' },
-  { id: 'revision',  label: 'Smart Revision',icon: '🔄' },
-  { id: 'archive',   label: 'Word Archive',  icon: '📚' },
-  { id: 'analytics', label: 'Analytics',     icon: '📊' },
+  { id: 'forge', label: 'Word Forge', icon: '⚡' },
+  { id: 'recall', label: 'Recall Arena', icon: '🎯' },
+  { id: 'revision', label: 'Smart Revision', icon: '🔄' },
+  { id: 'archive', label: 'Word Archive', icon: '📚' },
+  { id: 'analytics', label: 'Analytics', icon: '📊' },
 ];
 
 // ── Loading Skeleton ──────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ function VocabSkeleton() {
     <div className="px-4 pt-4 space-y-4 animate-pulse">
       <div className="h-8 w-48 bg-white/5 rounded-xl" />
       <div className="flex gap-2">
-        {[1,2,3,4,5].map(i => (
+        {[1, 2, 3, 4, 5].map(i => (
           <div key={i} className="h-9 w-24 bg-white/5 rounded-xl flex-shrink-0" />
         ))}
       </div>
@@ -128,10 +128,10 @@ export default function VocabularyPage() {
             exit={{ opacity: 0, y: -16 }}
             transition={{ duration: 0.22 }}
           >
-            {activeVocabModule === 'forge'     && <WordForge />}
-            {activeVocabModule === 'recall'    && <RecallArena />}
-            {activeVocabModule === 'revision'  && <SmartRevision />}
-            {activeVocabModule === 'archive'   && <WordArchive />}
+            {activeVocabModule === 'forge' && <WordForge />}
+            {activeVocabModule === 'recall' && <RecallArena />}
+            {activeVocabModule === 'revision' && <SmartRevision />}
+            {activeVocabModule === 'archive' && <WordArchive />}
             {activeVocabModule === 'analytics' && <VocabularyAnalytics />}
           </motion.div>
         </AnimatePresence>
