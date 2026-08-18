@@ -237,7 +237,13 @@ const DesktopMessageWrapper = memo(function DesktopMessageWrapper({
 
 // ── Main MessageList ──────────────────────────────────────────────────────────
 
-export default function MessageList({ onReply, partnerLastReadAt, partnerLastSeen, partnerIsActiveInChat }) {
+export default function MessageList({
+  onReply,
+  partnerLastReadAt,
+  partnerLastSeen,
+  partnerIsActiveInChat,
+  pendingMessages = [],
+}) {
   const user    = useAuthStore(s => s.user);
   const partner = useAuthStore(s => s.partner);
 
@@ -380,8 +386,30 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
     setContextMenu({ x: e.clientX, y: e.clientY, msg });
   }, []);
 
-  // ── Build message groups ───────────────────────────────────────────────────
-  const allMessages = useMemo(() => [...olderMsgs, ...messages], [olderMsgs, messages]);
+  // ── Build message groups (merging optimistic messages for 0ms display) ─────
+  const allMessages = useMemo(() => {
+    const base = [...olderMsgs, ...messages];
+    if (!pendingMessages || !pendingMessages.length) return base;
+
+    // Filter pending messages that are already delivered/present in base
+    const unconfirmedPending = pendingMessages.filter(p => {
+      const pTime = p.createdAt instanceof Date ? p.createdAt.getTime() : new Date(p.createdAt).getTime();
+      return !base.some(m => {
+        if (m.senderId !== p.senderId || m.text !== p.text) return false;
+        const mTime = m.createdAt?.toDate ? m.createdAt.toDate().getTime() : new Date(m.createdAt).getTime();
+        return Math.abs(mTime - pTime) < 20000;
+      });
+    });
+
+    return [...base, ...unconfirmedPending];
+  }, [olderMsgs, messages, pendingMessages]);
+
+  // Auto scroll on new optimistic messages
+  useEffect(() => {
+    if (pendingMessages?.length > 0) {
+      scrollToBottomNow('smooth');
+    }
+  }, [pendingMessages, scrollToBottomNow]);
 
   const groups = useMemo(() => {
     const result = [];
@@ -463,7 +491,7 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
               <div className={`flex gap-2 items-end ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
                 {!isMe && <Avatar name={name} />}
 
-                <div className={`flex flex-col gap-0.5 max-w-[72%] sm:max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}>
+                <div className={`flex flex-col gap-0.5 max-w-[85%] sm:max-w-[75%] md:max-w-[520px] min-w-0 ${isMe ? 'items-end' : 'items-start'}`}>
                   <span className="text-[11px] text-slate-500 px-1">{name}</span>
 
                   {group.msgs.map((msg, mi) => {
@@ -472,39 +500,48 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
                     // Read receipt logic for my messages
                     let statusIcon = null;
                     if (isMe) {
-                      const msgTime = msg.createdAt?.toDate
-                        ? msg.createdAt.toDate().getTime()
-                        : (msg.createdAt ? new Date(msg.createdAt).getTime() : Date.now());
-                      const readTime = partnerLastReadAt
-                        ? (partnerLastReadAt instanceof Date ? partnerLastReadAt.getTime() : new Date(partnerLastReadAt).getTime())
-                        : 0;
-
-                      const isSeen = (readTime > 0 && msgTime <= readTime) || !!partnerIsActiveInChat;
-
-                      if (isSeen) {
+                      if (msg.isOptimistic) {
                         statusIcon = (
-                          <span className="inline-flex items-center text-cyan-300 drop-shadow-[0_0_3px_rgba(34,211,238,0.75)] ml-1 shrink-0 select-none" title="Seen">
-                            <CheckCheck size={13} strokeWidth={2.5} />
-                          </span>
-                        );
-                      } else {
-                        statusIcon = (
-                          <span className="inline-flex items-center text-white/50 ml-1 shrink-0 select-none" title="Sent">
+                          <span className="inline-flex items-center text-white/40 ml-1 shrink-0 select-none" title="Sending...">
                             <Check size={12} strokeWidth={2} />
                           </span>
                         );
+                      } else {
+                        const msgTime = msg.createdAt?.toDate
+                          ? msg.createdAt.toDate().getTime()
+                          : (msg.createdAt ? new Date(msg.createdAt).getTime() : Date.now());
+                        const readTime = partnerLastReadAt
+                          ? (partnerLastReadAt instanceof Date ? partnerLastReadAt.getTime() : new Date(partnerLastReadAt).getTime())
+                          : 0;
+
+                        const isSeen = (readTime > 0 && msgTime <= readTime) || !!partnerIsActiveInChat;
+
+                        if (isSeen) {
+                          statusIcon = (
+                            <span className="inline-flex items-center text-cyan-300 drop-shadow-[0_0_3px_rgba(34,211,238,0.75)] ml-1 shrink-0 select-none" title="Seen">
+                              <CheckCheck size={13} strokeWidth={2.5} />
+                            </span>
+                          );
+                        } else {
+                          statusIcon = (
+                            <span className="inline-flex items-center text-white/50 ml-1 shrink-0 select-none" title="Sent">
+                              <Check size={12} strokeWidth={2} />
+                            </span>
+                          );
+                        }
                       }
                     }
 
                     const bubbleContent = (
                       <div
                         ref={el => { if (el) msgRefs.current[msg.id] = el; }}
-                        className={`relative rounded-2xl px-4 py-2.5 max-w-full break-words transition-all ${
+                        className={`relative rounded-2xl px-3.5 py-2 max-w-full min-w-0 transition-all ${
                           isMe
                             ? 'bg-gradient-to-br from-cyan-500 to-blue-600 text-white rounded-tr-sm'
                             : 'bg-white/[0.06] border border-white/10 text-white rounded-tl-sm'
                         } ${!isFirst && isMe  ? 'rounded-tr-2xl' : ''}
-                          ${!isFirst && !isMe ? 'rounded-tl-2xl' : ''}`}
+                          ${!isFirst && !isMe ? 'rounded-tl-2xl' : ''}
+                          ${msg.isOptimistic ? 'opacity-90' : ''}`}
                         onClick={() => handleBubbleTap(msg.id)}
                       >
                         {msg.replyTo && (
@@ -520,13 +557,15 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
                             </div>
                           </div>
                         ) : (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap flex items-end justify-between gap-3 min-w-[60px]">
-                            <span>{msg.text}</span>
-                            <span className={`text-[9px] translate-y-1 inline-flex items-center shrink-0 ${isMe ? '' : 'text-slate-500'}`}>
+                          <div className="flex flex-wrap items-end justify-end gap-x-2 gap-y-0.5 min-w-0">
+                            <span className="text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] min-w-0 flex-1">
+                              {msg.text}
+                            </span>
+                            <span className={`text-[9px] select-none inline-flex items-center shrink-0 self-end ml-auto pb-0.5 ${isMe ? 'text-white/80' : 'text-slate-500'}`}>
                               {formatTime(msg.createdAt)}
                               {isMe && statusIcon}
                             </span>
-                          </p>
+                          </div>
                         )}
 
                         <TimestampTooltip

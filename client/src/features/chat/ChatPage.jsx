@@ -93,6 +93,17 @@ export default function ChatPage() {
   // ── Daily char usage (real-time from Firestore) ───────────────────────────
   const [usedChars, setUsedChars] = useState(0);
 
+  // ── Optimistic messages for 0ms instant display ───────────────────────────
+  const [pendingMessages, setPendingMessages] = useState([]);
+
+  const handleOptimisticSend = useCallback((optimisticMsg) => {
+    setPendingMessages(prev => [...prev, optimisticMsg]);
+  }, []);
+
+  const handleOptimisticFail = useCallback((tempId) => {
+    setPendingMessages(prev => prev.filter(m => m.id !== tempId));
+  }, []);
+
   const hasMarkedRead = useRef(false);
 
   const partnerStats = usePartnerStats();
@@ -313,6 +324,7 @@ export default function ChatPage() {
               partnerLastReadAt={partnerStats?.chatLastReadAt}
               partnerLastSeen={partnerStats?.lastSeen}
               partnerIsActiveInChat={false}
+              pendingMessages={pendingMessages}
             />
             <ChatInput
               isLocked={false}
@@ -320,6 +332,8 @@ export default function ChatPage() {
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
               onMessageSent={handleMessageSent}
+              onOptimisticSend={handleOptimisticSend}
+              onOptimisticFail={handleOptimisticFail}
             />
           </motion.div>
         )}

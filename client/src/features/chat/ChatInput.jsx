@@ -30,13 +30,23 @@ function truncate(str, n = 60) {
 
 /**
  * Props:
- *   isLocked       — vocab gate still locked (bool)
- *   usedChars      — current shared daily usage (number)
- *   replyTo        — reply target { id, text, senderName } | null
- *   onCancelReply  — clear reply target
- *   onMessageSent  — called with text string after successful send
+ *   isLocked           — vocab gate still locked (bool)
+ *   usedChars          — current shared daily usage (number)
+ *   replyTo            — reply target { id, text, senderName } | null
+ *   onCancelReply      — clear reply target
+ *   onMessageSent      — called with text string after successful send
+ *   onOptimisticSend   — called immediately (0ms) with temporary message
+ *   onOptimisticFail   — called with tempId if sending fails
  */
-export default function ChatInput({ isLocked, usedChars = 0, replyTo, onCancelReply, onMessageSent }) {
+export default function ChatInput({
+  isLocked,
+  usedChars = 0,
+  replyTo,
+  onCancelReply,
+  onMessageSent,
+  onOptimisticSend,
+  onOptimisticFail,
+}) {
   const user = useAuthStore(s => s.user);
   const isMobile = useIsMobile();
   const [text, setText] = useState('');
@@ -64,7 +74,7 @@ export default function ChatInput({ isLocked, usedChars = 0, replyTo, onCancelRe
 
     setSendError(null);
 
-    // Optimistic input reset — no flicker
+    // Instant optimistic input reset — 0ms delay
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = '44px';
@@ -75,11 +85,26 @@ export default function ChatInput({ isLocked, usedChars = 0, replyTo, onCancelRe
       : null;
     onCancelReply?.();
 
+    // Generate local optimistic message for instantaneous 0ms display
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const optimisticMsg = {
+      id: tempId,
+      senderId: user.uid,
+      text: trimmed,
+      createdAt: new Date(),
+      replyTo: replyPayload,
+      isOptimistic: true,
+    };
+    onOptimisticSend?.(optimisticMsg);
+
     try {
       await sendMessage(user.uid, trimmed, null, null, replyPayload);
       onMessageSent?.(trimmed);
     } catch (err) {
       console.error('[ChatInput] Send failed:', err);
+      onOptimisticFail?.(tempId);
+      // Restore text on failure so user doesn't lose it
+      setText(trimmed);
       if (err?.code === 'DAILY_LIMIT_EXCEEDED') {
         setSendError(
           `⚠️ Daily Chat Limit Reached\n` +
@@ -88,10 +113,8 @@ export default function ChatInput({ isLocked, usedChars = 0, replyTo, onCancelRe
       } else {
         setSendError('Failed to send. Please try again.');
       }
-      // Restore on failure
-      setText(trimmed);
     }
-  }, [canSend, text, isLocked, user?.uid, replyTo, onCancelReply, onMessageSent]);
+  }, [canSend, text, isLocked, user?.uid, replyTo, onCancelReply, onOptimisticSend, onOptimisticFail, onMessageSent]);
 
   const handleKey = (e) => {
     if (e.key === 'Enter') {
