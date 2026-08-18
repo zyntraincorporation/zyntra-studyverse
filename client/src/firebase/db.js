@@ -1211,15 +1211,19 @@ export async function getAllScheduleEntries(userId) {
   });
 }
 
-export function subscribeToAllScheduleEntries(userId, callback) {
-  return onSnapshot(scheduleCol(userId), snap => {
-    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const sorted = docs.sort((a, b) => {
-      if (a.date === b.date) return (b.time || '').localeCompare(a.time || '');
-      return (b.date || '').localeCompare(a.date || '');
-    });
-    callback(sorted);
-  });
+export function subscribeToAllScheduleEntries(userId, callback, onError) {
+  return onSnapshot(
+    scheduleCol(userId),
+    snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const sorted = docs.sort((a, b) => {
+        if (a.date === b.date) return (b.time || '').localeCompare(a.time || '');
+        return (b.date || '').localeCompare(a.date || '');
+      });
+      callback(sorted);
+    },
+    onError
+  );
 }
 
 export async function updateScheduleEntry(userId, entryId, data) {
@@ -1235,7 +1239,7 @@ export async function deleteScheduleEntry(userId, entryId) {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export async function generateAndSaveAIReport(userId, days = 7) {
+export async function generateAndSaveAIReport(userId, days = 7, topicSummary = null) {
   const [stats, chapters] = await Promise.all([
     getWeeklyStats(userId, days),
     getChapters(userId),
@@ -1250,15 +1254,25 @@ export async function generateAndSaveAIReport(userId, days = 7) {
     return acc;
   }, {});
 
+  // Build topic-level progress string if provided
+  let topicProgressStr = '';
+  if (topicSummary && Object.keys(topicSummary).length > 0) {
+    topicProgressStr = '\nTopic-level progress: ' +
+      Object.entries(topicSummary)
+        .map(([subj, d]) => `${subj}: ${d.done}/${d.total} topics done, Rev1: ${d.rev1}/${d.total}`)
+        .join(' | ');
+  }
+
   const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-  const userMessage = `সাইফুলের গত ${days} দিনের data:
-Scheduled sessions: ${stats.summary.totalCompleted}/${stats.summary.totalScheduled}
-Extra study: ${stats.summary.totalExtraMin} min | Streak: ${stats.streak}d
-Subject stats: ${JSON.stringify(stats.subjectDistribution)}
-Chapter progress: ${JSON.stringify(chapterSummary)}
-Daily log: ${JSON.stringify(stats.byDay.map(d => ({ date: d.date, completed: d.completedSessions, missed: d.missedSessions, extra: d.extraStudyMinutes })))}`;
+  const userMessage = `সাইফুলের গত ${days} দিনের data:\n` +
+    `Scheduled sessions: ${stats.summary.totalCompleted}/${stats.summary.totalScheduled}\n` +
+    `Extra study: ${stats.summary.totalExtraMin} min | Streak: ${stats.streak}d\n` +
+    `Subject stats: ${JSON.stringify(stats.subjectDistribution)}\n` +
+    `Chapter progress: ${JSON.stringify(chapterSummary)}` +
+    topicProgressStr + '\n' +
+    `Daily log: ${JSON.stringify(stats.byDay.map(d => ({ date: d.date, completed: d.completedSessions, missed: d.missedSessions, extra: d.extraStudyMinutes })))}`;
 
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -1289,6 +1303,7 @@ Daily log: ${JSON.stringify(stats.byDay.map(d => ({ date: d.date, completed: d.c
   const id = await saveAIReport(userId, { reportText, score, periodDays: days, date: getBSTDateString() });
   return { id, reportText, score };
 }
+
 
 const AI_SYSTEM_PROMPT = `তুমি ZYNTRA AI — সাইফুলের কঠোর study mentor। সংক্ষিপ্ত, কাজের কথা বলো।
 
@@ -1449,6 +1464,32 @@ export async function batchGetTopicProgress(chapterDocIds) {
   return results;
 }
 
+/**
+ * Auto-schedule a chapter for revision when the first topic is marked studied.
+ * Sets chapter status to 'completed' if it was 'not_started' or 'in_progress',
+ * making it eligible for getDueRevisions / RevisionPage.
+ *
+ * @param {string} chapterDocId  - the chapter Firestore document ID
+ * @param {object} chapterMeta   - { userId, subject, chapterNumber, status }
+ */
+export async function scheduleRevisionIfNeeded(chapterDocId, chapterMeta) {
+  if (!chapterDocId || !chapterMeta?.userId) return;
+  const { status } = chapterMeta;
+  // Only promote if chapter has not been manually marked as completed/revised yet
+  if (!status || status === 'not_started' || status === 'in_progress') {
+    try {
+      await setDoc(
+        doc(db, 'chapters', chapterDocId),
+        { status: 'completed', lastUpdated: now() },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('[scheduleRevisionIfNeeded] Could not update chapter status:', e);
+    }
+  }
+}
+
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ROUTINE DEFINITIONS  (weekly / daily / once recurring check-in sessions)
 // Stored at: users/{uid}/routineDefinitions/{id}
@@ -1473,10 +1514,12 @@ export async function getRoutineDefinitions(userId) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export function subscribeToRoutineDefinitions(userId, callback) {
-  return onSnapshot(routineDefsCol(userId), snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+export function subscribeToRoutineDefinitions(userId, callback, onError) {
+  return onSnapshot(
+    routineDefsCol(userId),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    onError
+  );
 }
 
 export async function updateRoutineDefinition(userId, defId, data) {
@@ -1536,7 +1579,7 @@ export async function getSessionLogsByDateRange(userId, startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export function subscribeToSessionLogs(userId, callback, days = 90) {
+export function subscribeToSessionLogs(userId, callback, onError, days = 90) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const startDate = getBSTDateString(cutoff);
   const q = query(
@@ -1544,9 +1587,11 @@ export function subscribeToSessionLogs(userId, callback, days = 90) {
     where('date', '>=', startDate),
     orderBy('date', 'desc')
   );
-  return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  return onSnapshot(
+    q,
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    onError
+  );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

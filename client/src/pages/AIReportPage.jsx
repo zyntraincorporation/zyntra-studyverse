@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Sparkles, RefreshCw, Clock, TrendingUp, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
-import { generateAndSaveAIReport, getAllAIReports, getLatestAIReport } from '../firebase/db';
+import { useTopicStore } from '../store/useTopicStore';
+import { generateAndSaveAIReport, getAllAIReports, getLatestAIReport, getChapters } from '../firebase/db';
 import { getBSTDateString } from '../lib/bst';
 
 function ReportCard({ report, isLatest }) {
@@ -69,10 +70,18 @@ export default function AIReportPage() {
   const [generating, setGenerating] = useState(false);
   const [days,       setDays]       = useState(7);
 
+  // Live topic summary from global store for AI context
+  const getAITopicSummary = useTopicStore(s => s.getAITopicSummary);
+  const [allChapters, setAllChapters] = useState([]);
+
   useEffect(() => {
     if (!user?.uid) return;
-    getAllAIReports(user.uid).then(r => {
+    Promise.all([
+      getAllAIReports(user.uid),
+      getChapters(user.uid),
+    ]).then(([r, chs]) => {
       setReports(r);
+      setAllChapters(chs || []);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [user?.uid]);
@@ -84,7 +93,9 @@ export default function AIReportPage() {
     }
     setGenerating(true);
     try {
-      const result = await generateAndSaveAIReport(user.uid, days);
+      // Pass latest topic-level progress to AI
+      const topicSummary = getAITopicSummary(allChapters);
+      const result = await generateAndSaveAIReport(user.uid, days, topicSummary);
       setReports(prev => [{ ...result, id: result.id, generatedAt: { toDate: () => new Date() } }, ...prev]);
       toast('AI report generated! 🤖', 'success');
     } catch (err) {
@@ -93,6 +104,7 @@ export default function AIReportPage() {
       setGenerating(false);
     }
   };
+
 
   return (
     <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5 pb-24">

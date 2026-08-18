@@ -1,125 +1,47 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  getTopicProgress,
-  updateTopicStatus,
-  seedTopicsForChapter,
-  subscribeTopicProgress,
-} from '../firebase/db';
+import { useEffect } from 'react';
+import { useTopicStore } from '../store/useTopicStore';
 import { calcChapterStudyPct, calcChapterRevisionPct } from '../lib/chapters-data';
 
 /**
- * useTopicProgress — manages topic-level progress for a single chapter.
+ * useTopicProgress — thin wrapper around the global useTopicStore.
+ * Starts a real-time listener for the chapter on first call.
+ * Reads data from the shared global store — no isolated local state.
  *
  * @param {string}  chapterDocId   - Firestore doc ID, e.g. "uid_Physics1_1"
  * @param {Array}   allTopics      - from TOPIC_DATA[`${subject}_${chapterNumber}`]
- * @param {string}  legacyStatus   - chapter's existing status for migration
- * @param {boolean} isOpen         - only subscribe when chapter panel is open
+ * @param {string}  legacyStatus   - chapter's existing status for legacy migration
+ * @param {boolean} isOpen         - start listener when chapter panel is opened
  */
 export function useTopicProgress(chapterDocId, allTopics, legacyStatus, isOpen) {
-  // completionMap: { [slug]: { studied, studiedAt, revisions: { '1':..., '2':..., '3':... } } }
-  const [completionMap, setCompletionMap]   = useState({});
-  const [loading, setLoading]               = useState(false);
-  const [seeded, setSeeded]                 = useState(false);
-  const [error, setError]                   = useState(null);
-  const unsubRef                            = useRef(null);
-  const hasSeededRef                        = useRef(false);
+  const startListening = useTopicStore(s => s.startListening);
+  const updateTopic    = useTopicStore(s => s.updateTopic);
+  const completionMap  = useTopicStore(s => s.topicMaps[chapterDocId] ?? {});
 
-  // ── Seed + subscribe when panel opens ───────────────────────────────────────
+  // Start real-time listener the first time the chapter panel opens.
+  // startListening is idempotent — safe to call on every render.
   useEffect(() => {
     if (!isOpen || !chapterDocId || !allTopics?.length) return;
-
-    let cancelled = false;
-
-    const init = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        // 1. Check if topics already exist (fast read)
-        const existing = await getTopicProgress(chapterDocId);
-        const hasData  = Object.keys(existing).length > 0;
-
-        if (!hasData && !hasSeededRef.current) {
-          // 2. First time — seed from TOPIC_DATA (with legacy migration)
-          await seedTopicsForChapter(chapterDocId, allTopics, legacyStatus);
-          hasSeededRef.current = true;
-        } else if (hasData) {
-          hasSeededRef.current = true;
-        }
-
-        if (cancelled) return;
-        setSeeded(true);
-
-        // 3. Subscribe for real-time updates
-        unsubRef.current = subscribeTopicProgress(chapterDocId, map => {
-          if (!cancelled) setCompletionMap(map);
-        });
-
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load topics');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    init();
-
-    return () => {
-      cancelled = true;
-      if (unsubRef.current) {
-        unsubRef.current();
-        unsubRef.current = null;
-      }
-    };
+    startListening(chapterDocId, allTopics, legacyStatus);
   }, [isOpen, chapterDocId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Optimistic update handler ────────────────────────────────────────────────
-  const updateTopic = useCallback(async (slug, update) => {
-    // Optimistic update — apply immediately
-    setCompletionMap(prev => {
-      const current = prev[slug] || { revisions: {} };
-      const next    = { ...current, revisions: { ...current.revisions } };
+  // ── Derived progress values (computed from global store, always fresh) ────
+  const studyPct  = calcChapterStudyPct(allTopics, completionMap);
+  const rev1Pct   = calcChapterRevisionPct(allTopics, completionMap, 1);
+  const rev2Pct   = calcChapterRevisionPct(allTopics, completionMap, 2);
+  const rev3Pct   = calcChapterRevisionPct(allTopics, completionMap, 3);
 
-      if (typeof update.studied === 'boolean') {
-        next.studied   = update.studied;
-        next.studiedAt = update.studied ? new Date().toISOString() : null;
-      }
-      if (update.revisionLevel != null) {
-        next.revisions[String(update.revisionLevel)] =
-          update.revisionDone ? new Date().toISOString() : null;
-      }
-
-      return { ...prev, [slug]: next };
-    });
-
-    try {
-      await updateTopicStatus(chapterDocId, slug, update);
-      // onSnapshot will confirm the final state
-    } catch (err) {
-      // Rollback on failure
-      setError(err.message || 'Update failed');
-      // Re-fetch to restore accurate state
-      const fresh = await getTopicProgress(chapterDocId);
-      setCompletionMap(fresh);
-    }
-  }, [chapterDocId]);
-
-  // ── Aggregated progress values ───────────────────────────────────────────────
-  const studyPct   = calcChapterStudyPct(allTopics, completionMap);
-  const rev1Pct    = calcChapterRevisionPct(allTopics, completionMap, 1);
-  const rev2Pct    = calcChapterRevisionPct(allTopics, completionMap, 2);
-  const rev3Pct    = calcChapterRevisionPct(allTopics, completionMap, 3);
-
-  const doneCount  = allTopics
+  const doneCount = allTopics
     ? allTopics.filter(t => completionMap[t.slug]?.studied).length
     : 0;
+
+  // loading = true only if chapter has no data in store yet and is open
+  const loading = isOpen && Object.keys(completionMap).length === 0;
 
   return {
     completionMap,
     loading,
-    seeded,
-    error,
-    updateTopic,
+    error:      null, // errors surface via toast in updateTopic
+    updateTopic: (slug, update) => updateTopic(chapterDocId, slug, update),
     studyPct,
     rev1Pct,
     rev2Pct,

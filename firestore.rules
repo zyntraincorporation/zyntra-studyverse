@@ -27,6 +27,16 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      // ── Check-In Center: Routine Definitions ─────────────────────────────────
+      match /routineDefinitions/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // ── Check-In Center: Session Logs (per-occurrence history) ────────────────
+      match /sessionLogs/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
       // ── AI Mentor subcollections ─────────────────────────────────────────────
       match /mentorAnalysis/{date} {
         allow read, write: if isOwner(userId);

@@ -38,21 +38,36 @@ export default function CheckInCenterPage() {
   useEffect(() => {
     if (!user?.uid) return;
 
-    const unsubDefs = subscribeToRoutineDefinitions(user.uid, defs => {
-      setRoutineDefs(defs);
-      setLoadingInit(false);
-    });
+    // Safety timeout — never leave stuck in loading state
+    const safetyTimer = setTimeout(() => setLoadingInit(false), 5000);
 
-    const unsubLogs = subscribeToSessionLogs(user.uid, logs => {
-      setSessionLogs(logs);
-    });
+    const unsubDefs = subscribeToRoutineDefinitions(
+      user.uid,
+      (defs) => { setRoutineDefs(defs); setLoadingInit(false); },
+      (err)  => { console.error('[CheckInCenter] routineDefinitions:', err); setLoadingInit(false); }
+    );
 
-    const unsubSched = subscribeToAllScheduleEntries(user.uid, entries => {
-      setAllSchedule(entries);
-      setTodaySchedule(entries.filter(e => e.date === today));
-    });
+    const unsubLogs = subscribeToSessionLogs(
+      user.uid,
+      (logs) => setSessionLogs(logs),
+      (err)  => console.error('[CheckInCenter] sessionLogs:', err)
+    );
 
-    return () => { unsubDefs(); unsubLogs(); unsubSched(); };
+    const unsubSched = subscribeToAllScheduleEntries(
+      user.uid,
+      (entries) => {
+        setAllSchedule(entries);
+        setTodaySchedule(entries.filter(e => e.date === today));
+      },
+      (err) => console.error('[CheckInCenter] schedule:', err)
+    );
+
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubDefs();
+      unsubLogs();
+      unsubSched();
+    };
   }, [user?.uid, today]);
 
   const handleRefresh = useCallback(() => {
