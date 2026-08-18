@@ -2,38 +2,27 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Bot, User, Lock, Sparkles, AlertCircle } from 'lucide-react';
 import { QuestionLimitModal } from './QuestionLimitModal';
+import { MarkdownContent } from './MarkdownContent';
 import { setDailyLimit, sendChatMessage, buildChatContextSummary } from '../../lib/mentorApi';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MentorChat
-// Full interactive chat interface with:
-//   - Daily question limit enforcement
-//   - Limit setup modal on first open
-//   - Typing indicator
-//   - Quick suggestion chips
-//   - Direct Firestore message persistence
-// ─────────────────────────────────────────────────────────────────────────────
 
 const QUICK_SUGGESTIONS = [
   'আজ কোন chapter-টা সবচেয়ে জরুরি?',
   'Chemistry-তে কত chapter বাকি আছে?',
-  'Physics-এর সবচেয়ে কঠিন chapter কোনটা?',
+  'BUET-এর জন্য PCM balance কেমন হওয়া উচিত?',
   'আমার streak ভাঙছে কেন?',
-  'BUET-এর জন্য কোথায় focus করব?',
-  'Math কতটা পিছিয়ে আছি?',
+  'HSC-এ Golden A+ পেতে কী করতে হবে?',
+  'HigherMath-এ সবচেয়ে কঠিন topic কোনটা?',
 ];
 
-// ── Message bubble ────────────────────────────────────────────────────────────
 function MessageBubble({ msg }) {
   const isUser = msg.role === 'user';
   return (
     <motion.div
       initial={{ opacity: 0, y: 8, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.25, ease: 'easeOut' }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
       className={`flex items-end gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}
     >
-      {/* Avatar — mentor side */}
       {!isUser && (
         <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-500/20 to-blue-600/20
                         border border-cyan-500/20 flex items-center justify-center shrink-0 mb-0.5">
@@ -41,16 +30,19 @@ function MessageBubble({ msg }) {
         </div>
       )}
 
-      {/* Bubble */}
-      <div className={`max-w-[82%] px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
+      <div className={`max-w-[84%] px-4 py-3 text-sm
         ${isUser
           ? 'bg-gradient-to-br from-cyan-500/20 to-blue-600/15 border border-cyan-500/25 text-cyan-50 rounded-2xl rounded-br-sm'
-          : 'bg-white/[0.04] border border-white/[0.08] text-slate-200 rounded-2xl rounded-bl-sm'}`}
+          : 'bg-white/[0.04] border border-white/[0.08] rounded-2xl rounded-bl-sm'}`}
       >
-        {msg.content}
+        {isUser ? (
+          <p className="leading-relaxed whitespace-pre-wrap text-[13.5px]">{msg.content}</p>
+        ) : (
+          // AI messages rendered as markdown
+          <MarkdownContent>{msg.content}</MarkdownContent>
+        )}
       </div>
 
-      {/* Avatar — user side */}
       {isUser && (
         <div className="w-7 h-7 rounded-lg bg-white/[0.06] border border-white/[0.08]
                         flex items-center justify-center shrink-0 mb-0.5">
@@ -61,7 +53,6 @@ function MessageBubble({ msg }) {
   );
 }
 
-// ── Typing indicator ──────────────────────────────────────────────────────────
 function TypingIndicator() {
   return (
     <div className="flex items-end gap-2.5 justify-start">
@@ -85,85 +76,71 @@ function TypingIndicator() {
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
 export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAnalysisText, initialMessages = [] }) {
-  const [messages,   setMessages]   = useState(initialMessages);
-  const [input,      setInput]      = useState('');
-  const [sending,    setSending]    = useState(false);
-  const [showModal,  setShowModal]  = useState(false);
-  const [error,      setError]      = useState('');
+  const [messages,  setMessages]  = useState(initialMessages);
+  const [input,     setInput]     = useState('');
+  const [sending,   setSending]   = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [error,     setError]     = useState('');
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
 
-  // Sync initial messages when they load
   useEffect(() => {
-    if (initialMessages && initialMessages.length > 0) {
-      setMessages(initialMessages);
-    }
+    if (initialMessages?.length > 0) setMessages(initialMessages);
   }, [initialMessages]);
 
-  // Show limit modal if limit not yet set for today and user has no questions used
   useEffect(() => {
-    if (usage && !usage.limitSet && usage.questionsUsed === 0) {
+    if (usage && !usage.limitSet && (usage.questionsUsed || 0) === 0) {
       setShowModal(true);
     }
   }, [usage]);
 
-  // Scroll to bottom on new message
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
 
   const questionsUsed = usage?.questionsUsed || 0;
   const dailyLimit    = usage?.dailyLimit;
-  const isUnlimited   = dailyLimit === 'unlimited' || dailyLimit === null;
+  const isUnlimited   = dailyLimit === 'unlimited' || dailyLimit === null || dailyLimit === undefined;
   const isLimitSet    = usage?.limitSet;
   const limitReached  = !isUnlimited && isLimitSet && questionsUsed >= Number(dailyLimit);
 
-  // Handle limit selection from modal
   const handleLimitSelect = async (limitVal) => {
     if (!userId) return;
     try {
       await setDailyLimit(userId, limitVal);
       onUsageUpdate({ questionsUsed: 0, dailyLimit: limitVal, limitSet: true });
       setShowModal(false);
-      inputRef.current?.focus();
-    } catch (e) {
-      setError('Limit set করতে সমস্যা হয়েছে। আবার চেষ্টা করো।');
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch {
+      setError('Limit set করতে সমস্যা হয়েছে।');
     }
   };
 
-  // Send message
   const handleSend = async (text = input.trim()) => {
     if (!userId || !text || sending || limitReached) return;
     setInput('');
     setError('');
-
     const userMsg = { role: 'user', content: text, timestamp: new Date().toISOString() };
     setMessages(prev => [...prev, userMsg]);
     setSending(true);
 
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
+
     try {
       const contextSummary = buildChatContextSummary(fullContext, todayAnalysisText);
       const data = await sendChatMessage(userId, text, messages, contextSummary);
-
-      const assistantMsg = { role: 'assistant', content: data.response, timestamp: data.timestamp };
-      setMessages(prev => [...prev, assistantMsg]);
-
-      // Update usage counter in state
-      onUsageUpdate({
-        ...usage,
-        questionsUsed: data.questionsUsed,
-        dailyLimit:    data.dailyLimit,
-        limitSet:      true,
-      });
+      setMessages(prev => [...prev, { role: 'assistant', content: data.response, timestamp: data.timestamp }]);
+      onUsageUpdate({ ...usage, questionsUsed: data.questionsUsed, dailyLimit: data.dailyLimit, limitSet: true });
     } catch (e) {
       if (e.status === 429 || e.message?.includes('limit')) {
         setError('আজকের question limit শেষ। কাল আবার চেষ্টা করো।');
       } else {
         setError(e.message || 'কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করো।');
       }
-      // Remove optimistic user message on failure
       setMessages(prev => prev.filter(m => m !== userMsg));
     } finally {
       setSending(false);
@@ -171,23 +148,17 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  // Limit counter pill
   const LimitPill = () => {
     if (!isLimitSet) return null;
     const pct = isUnlimited ? 0 : (questionsUsed / Number(dailyLimit)) * 100;
     return (
       <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border
-        ${limitReached
-          ? 'bg-red-500/15 border-red-500/30 text-red-400'
-          : pct >= 80
-            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-            : 'bg-white/[0.04] border-white/[0.08] text-slate-400'}`}
+        ${limitReached ? 'bg-red-500/15 border-red-500/30 text-red-400'
+          : pct >= 80 ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+          : 'bg-white/[0.04] border-white/[0.08] text-slate-400'}`}
       >
         {limitReached ? <Lock size={10} /> : <Sparkles size={10} />}
         {isUnlimited ? '∞ Questions' : `${questionsUsed} / ${dailyLimit}`}
@@ -197,18 +168,16 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
 
   return (
     <div className="flex flex-col h-full min-h-0">
-
-      {/* ── Limit modal ───────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showModal && (
           <QuestionLimitModal
             onSelect={handleLimitSelect}
-            onSkip={() => { handleLimitSelect('unlimited'); }}
+            onSkip={() => handleLimitSelect('unlimited')}
           />
         )}
       </AnimatePresence>
 
-      {/* ── Chat header ───────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-cyan-500/20 border border-cyan-500/20 flex items-center justify-center">
@@ -220,10 +189,8 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
         <LimitPill />
       </div>
 
-      {/* ── Messages area ─────────────────────────────────────────────────── */}
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 min-h-0">
-
-        {/* Welcome message if no history */}
         {messages.length === 0 && !sending && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -234,21 +201,17 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
                             border border-cyan-500/20 flex items-center justify-center shrink-0">
               <Bot size={14} className="text-cyan-400" />
             </div>
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[82%]">
-              <p className="text-slate-200 text-sm leading-relaxed">
-                আমি তোমার সব progress দেখছি। কী জানতে চাও? BUET preparation, specific chapter, বা আজকের plan — যেকোনো কিছু জিজ্ঞেস করো।
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 max-w-[84%]">
+              <p className="text-slate-200 text-[13.5px] leading-relaxed">
+                তোমার সব data দেখলাম। Physics, Chemistry, Math — কোনটায় সমস্যা হচ্ছে? সরাসরি জিজ্ঞেস করো, আমি data দেখে বলব।
               </p>
             </div>
           </motion.div>
         )}
 
-        {/* Messages */}
         {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
-
-        {/* Typing indicator */}
         {sending && <TypingIndicator />}
 
-        {/* Error */}
         <AnimatePresence>
           {error && (
             <motion.div
@@ -267,7 +230,7 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
         <div ref={bottomRef} />
       </div>
 
-      {/* ── Quick suggestions (only when no messages) ─────────────────────── */}
+      {/* Quick suggestions */}
       {messages.length === 0 && (
         <div className="px-4 pb-3 shrink-0">
           <div className="flex flex-wrap gap-1.5">
@@ -287,17 +250,17 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
         </div>
       )}
 
-      {/* ── Input area ────────────────────────────────────────────────────── */}
+      {/* Input */}
       <div className="px-4 pb-4 shrink-0">
         {limitReached ? (
           <div className="flex items-center justify-center gap-2 py-3 text-xs text-slate-500
                           bg-white/[0.02] border border-white/[0.05] rounded-xl">
             <Lock size={12} />
-            আজকের limit শেষ — {dailyLimit}টি প্রশ্ন করা হয়েছে। কাল আবার শুরু হবে।
+            আজকের limit শেষ — {dailyLimit}টি প্রশ্ন হয়েছে। কাল আবার শুরু হবে।
           </div>
         ) : (
           <div className="flex items-end gap-2">
-            <div className="flex-1 relative">
+            <div className="flex-1">
               <textarea
                 ref={inputRef}
                 rows={1}
@@ -321,15 +284,12 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
               disabled={!input.trim() || sending}
               className="h-[46px] w-[46px] rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600
                          hover:from-cyan-400 hover:to-blue-500 disabled:opacity-35 disabled:cursor-not-allowed
-                         flex items-center justify-center transition-all shrink-0
-                         shadow-[0_0_16px_rgba(6,182,212,0.2)]"
+                         flex items-center justify-center transition-all shrink-0"
             >
               <Send size={16} className="text-white" />
             </button>
           </div>
         )}
-
-        {/* Set limit button (if not yet set) */}
         {!isLimitSet && (
           <button
             onClick={() => setShowModal(true)}

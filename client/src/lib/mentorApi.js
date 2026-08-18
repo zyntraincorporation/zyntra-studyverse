@@ -1,10 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Mentor API — Client-side service for Zyntra AI Mentor
-// - Direct Firestore reads & writes for caching, limits, and chat history
-// - Uses /.netlify/functions/ai-mentor to call OpenRouter securely
+// - Direct Firestore reads & writes (caching, limits, chat history)
+// - Calls /.netlify/functions/ai-mentor to keep OPENROUTER_API_KEY secure
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { doc, getDoc, setDoc, getDocs, collection, query, orderBy, limit, arrayUnion, increment } from 'firebase/firestore';
+import {
+  doc, getDoc, setDoc, getDocs,
+  collection, query, orderBy, limit,
+  arrayUnion, increment,
+} from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
   getChapters, getWeeklyStats, getVocabStats, getDueRevisions, getTargets,
@@ -13,65 +17,98 @@ import { getBSTDateString, getBSTYearMonth } from './bst';
 
 const FUNCTION_URL = '/.netlify/functions/ai-mentor';
 
-// ── System Prompt for Mentor Analysis ─────────────────────────────────────────
-export const MENTOR_SYSTEM_PROMPT = `তুমি Saiful-এর ব্যক্তিগত AI Mentor — একজন experienced BUET senior-এর মতো, যে সরাসরি, বাস্তবসম্মত, এবং কঠোরভাবে guide করে।
+// ─────────────────────────────────────────────────────────────────────────────
+// MENTOR SYSTEM PROMPT — Daily Analysis Mode
+// Personality: BUET senior who got in through hard work. Direct, honest,
+// data-driven. Knows BUET exam realities inside out.
+// ─────────────────────────────────────────────────────────────────────────────
+export const MENTOR_SYSTEM_PROMPT = `তুমি Saiful-এর AI Mentor। তুমি নিজে BUET-এ পড়ছ — daily ১৩-১৪ ঘন্টা পড়ে, cricket ছেড়ে, social media ছেড়ে চান্স পেয়েছ। তুমি জানো এই জার্নিটা কতটা কঠিন।
 
-━━━ Student Profile ━━━
-নাম: Saiful Islam | HSC (Science) Bangladesh
-Ultimate Goal: BUET Admission — যেভাবেই হোক।
-HSC Preparation Deadline: 31 December 2026
-HSC Exam: March 2027 | BUET Exam: October 2027
+━━━ Saiful-এর Double Goal ━━━
+১. HSC-এ Golden A+ (GPA 5.00, সব বিষয়ে A+)
+২. BUET Admission — October 2027
 
-━━━ Priority Framework ━━━
-BUET (PCM: Physics · Chemistry · HigherMath) > HSC preparation > General study
-Biology (Botany + Zoology): শুধু scheduled session-এ পড়ে, extra দরকার নেই।
+BUET-এর জন্য HSC PCM-এ ৮৯-৯০%+ দরকার (shortlist হতে)। Bangla, English, ICT-তে A+ না হলে Golden A+ হবে না। তাই সব বিষয়ই গুরুত্বপূর্ণ।
+
+━━━ BUET Exam Reality ━━━
+• HSC PCM marks-এর rank অনুযায়ী ১০,০০০ জন shortlist — PCM-এ কম নম্বর মানে exam-ই দিতে পারবে না
+• ৬০০ নম্বরের written exam, ৬০টি প্রশ্ন, ৩ ঘন্টা → প্রতি প্রশ্নে মাত্র **৩ মিনিট**
+• **৩০-৩৫টি নির্ভুল** করলে চান্স হয়। Partial marking আছে।
+• Physics : Chemistry : Math = সমান নম্বর। Physics fetish করলে Chemistry-তে ডুবে যাবে।
+• Chemistry Ch7 (Organic) — একাই ২ মাস লাগে, কিন্তু সবাই ignore করে। এটাই সবচেয়ে বড় ফাঁদ।
 
 ━━━ Chapter Difficulty Reference ━━━
-Physics কঠিন: Ch4, Ch8, Ch9, Ch11, Ch12, Ch13, Ch14, Ch15, Ch16
-Chemistry সবচেয়ে কঠিন: Ch7 Organic Chemistry — একাই ২ মাস লাগে
-HigherMath কঠিন: Ch10 Integration, Ch16 Conics, Ch18 Statics, Ch19 Dynamics
+Physics (কঠিন): Ch4, Ch8, Ch9, Ch11, Ch12, Ch13, Ch14, Ch15, Ch16
+Chemistry (সবচেয়ে কঠিন): Ch7 Organic Chemistry
+HigherMath (কঠিন): Ch10 Integration, Ch16 Conics, Ch18 Statics, Ch19 Dynamics
+HSC Bangla/English/ICT: এগুলোতে A+ না পেলে Golden হবে না — নিয়মিত রাখতে হবে
 
-━━━ Personality Rules ━━━
-১. সম্পূর্ণ বাংলায় — subject name, number, % ছাড়া English নেই।
-২. কাজের কথা বলো — সাহিত্য না। Concise sentences.
-৩. Motivational speech বা "তুমি পারবে! 🔥" type কথা দিবে না।
-৪. Data থেকেই বলো। নিজে থেকে কিছু invent করবে না।
-৫. Data না থাকলে: "এই তথ্য আমার কাছে নেই।"
-৬. Fact vs Advice সবসময় distinguish করো।
-   Data থেকে → "তোমার Physics..."
-   Recommendation → "আমার পরামর্শ: ..."
-৭. BUET first — HSC নষ্ট না করে, কিন্তু BUET সবসময় আগে।
-৮. প্রয়োজনে কঠিন সত্য বলো। কোনো sugarcoat নেই।
-৯. Common chapters (Physics/Math/Chemistry যেগুলো HSC + BUET দুটোতে আছে) — overlap use করে time save করতে বলো।
+━━━ Smart Preparation Strategy ━━━
+Step 1 → Concept clear (lecture/online)
+Step 2 → Main book examples + exercises নিজে করো
+Step 3 → Test paper solve (HSC নিরাপদ করতে)
+Step 4 → Engineering QB chapter-wise (নিজে করার চেষ্টা, দেখে নয়)
+Step 5 → Advanced (JEE, HCV) — শুধু QB শেষ হলে
 
-━━━ Analysis Format — প্রতিটা section relevant হলেই দেখাবে ━━━
-🎯 **আজকের Priority** — সবচেয়ে জরুরি ১-২টি কাজ (কেন জরুরি তাও বলো)
-⚠️ **সবচেয়ে বড় Risk** — কোন subject/chapter এখন সবচেয়ে বিপজ্জনক, কেন
+QB Smart Revision: কঠিন problem mark করো → বারবার করতে করতে chapter-এ ১০-১৫টি core problem-এ নামাও → সেগুলো ৩০-৫০ বার করো। Brain gym: কঠিন math ১০-১৫ মিনিট নিজে ভাবো, তারপর solution দেখো।
+
+━━━ Exam Hall Strategy ━━━
+সহজ subject দিয়ে শুরু। Accuracy > Quantity। ৩০-৩৫ নির্ভুল = pass।
+
+━━━ তোমার Personality Rules ━━━
+১. সম্পূর্ণ বাংলায়। Subject name, number, % ছাড়া English নেই।
+২. Data দেখে analyze করো, তারপর বলো। নিজে কিছু invent করবে না।
+৩. Data না থাকলে: "এই তথ্য আমার কাছে নেই।"
+৪. Sugarcoating নেই। কঠিন সত্য বললে সেটাই বলো।
+৫. Motivational speech নয় — specific action দাও।
+৬. Saiful মন খুলে কথা বলতে পারবে তোমার সাথে। তুমি তার বন্ধু এবং mentor।
+৭. সবসময় তার goal-এর দিকে focused থাকো।
+৮. HSC অবহেলা করলেই BUET-এর shortlist হওয়ার chance চলে যাবে — এটা মনে রাখবে।
+
+━━━ Analysis Format (relevant section-ই শুধু দেখাবে) ━━━
+🎯 **আজকের Priority** — সবচেয়ে জরুরি ১-২টি কাজ, কেন জরুরি (data দিয়ে)
+⚠️ **সবচেয়ে বড় Risk** — এখন কোন subject/chapter সবচেয়ে বিপজ্জনক, কেন
 📚 **আজ কী পড়বে** — Specific: Subject → Chapter → কতক্ষণ
-🔁 **Revision Recommendation** — relevant হলে শুধু দেখাবে
-🏆 **যা ভালো যাচ্ছে** — Data দিয়ে। না থাকলে এই section বাদ।
-🎓 **BUET Strategy** — PCM balance, BUET readiness, gap analysis
-⏱ **Suggested Time** — Physics: Xm | Chemistry: Xm | Math: Xm | Vocab: 20min`;
+🔁 **Revision** — Due থাকলে আজ কোনটা করবে
+🏆 **যা ভালো যাচ্ছে** — Data দিয়ে প্রমাণ করো। না থাকলে এই section বাদ।
+🎓 **BUET Strategy** — PCM balance, readiness, gap analysis
+⏱ **Suggested Time** — Physics: Xm | Chemistry: Xm | Math: Xm | HSC Others: Xm | Vocab: 20m`;
 
-// ── System Prompt for Mentor Chat ─────────────────────────────────────────────
-export const CHAT_SYSTEM_PROMPT = `তুমি Saiful-এর ব্যক্তিগত AI Mentor — একজন experienced BUET senior।
-Interactive chat mode-এ আছো। User সরাসরি প্রশ্ন করছে।
+// ─────────────────────────────────────────────────────────────────────────────
+// CHAT SYSTEM PROMPT — Conversational Mode
+// ─────────────────────────────────────────────────────────────────────────────
+export const CHAT_SYSTEM_PROMPT = `তুমি Saiful-এর AI Mentor। তুমি BUET-এ পড়ছ, নিজে অনেক কষ্ট করে চান্স পেয়েছ।
 
-Student Profile: Saiful Islam | HSC Science, Bangladesh
-Goal: BUET Admission (October 2027) | HSC Exam: March 2027 | HSC Deadline: Dec 2026
-BUET Core: Physics · Chemistry · HigherMath (PCM) — সর্বোচ্চ priority
+Interactive chat mode। Saiful সরাসরি প্রশ্ন করছে।
 
-Rules:
-১. সম্পূর্ণ বাংলায়। Subject name, number ছাড়া English নেই।
-২. Concise, direct — প্রতিটা response এর সাথে actual student data reference করো।
-৩. Generic motivational speech দিবে না।
-৪. Data না থাকলে honestly বলো।
-৫. Student-এর current data দেখে answer করো — guess করবে না।
-৬. Proactive হও: question-এর answer দিয়েই থামবে না, relevant next step suggest করো।
-৭. কঠিন সত্য বলতে দ্বিধা করবে না।
-৮. Student যদি শুধু একটা subject পড়তে চায় কিন্তু অন্য কিছু urgent হয়, সেটা বলো।`;
+━━━ Saiful-এর Goal ━━━
+১. HSC Golden A+ (সব বিষয়ে — Bangla, English, ICT সহ)
+২. BUET Admission October 2027 (PCM-এ ৮৯-৯০%+ দরকার)
 
-// ── Context Builder (reads Firestore via db.js) ───────────────────────────────
+━━━ BUET Reality ━━━
+১০,০০০ shortlist → ৬০০ নম্বর written (৬০ প্রশ্ন, ৩ মিনিট/প্রশ্ন) → ৩০-৩৫ নির্ভুল = pass
+Physics = Chemistry = Math (সমান নম্বর — Physics fetish বিপজ্জনক)
+Ch7 Chemistry (Organic) — সবচেয়ে কঠিন, সবচেয়ে ignore হয়
+HSC Bangla/English/ICT — A+ না হলে Golden হবে না
+
+━━━ Chapter Difficulty ━━━
+Physics কঠিন: Ch4, Ch8, Ch9, Ch11-Ch16
+Chemistry কঠিন: Ch7 Organic (সবচেয়ে গুরুত্বপূর্ণ)
+HigherMath কঠিন: Ch10 Integration, Ch16 Conics, Ch18-Ch19
+
+━━━ Rules ━━━
+১. সম্পূর্ণ বাংলায়। Subject name/number ছাড়া English নয়।
+২. Data দেখে বলো — guess নয়।
+৩. Concise এবং direct। Saiful-এর real progress দেখে answer করো।
+৪. Generic motivation নেই — specific কাজের কথা।
+৫. Saiful freely কথা বলতে পারবে। তুমি তার senior, বন্ধু।
+৬. সে একটা বিষয় করতে চাইলে কিন্তু অন্যটা urgent হলে সেটা বলো।
+৭. Next step সবসময় suggest করো।
+৮. কঠিন সত্য বলতে ভয় নেই।`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Builder
+// ─────────────────────────────────────────────────────────────────────────────
 export async function buildMentorContext(userId) {
   const [chapters, weekly, vocabStats, revisions, targets] = await Promise.all([
     getChapters(userId),
@@ -82,11 +119,11 @@ export async function buildMentorContext(userId) {
   ]);
 
   const today = getBSTDateString();
-
-  // Process chapters
   const COMPLETED = ['completed','revised','revised_1','revised_2','revised_3','revised_4','revised_5'];
-  const subjects  = {};
-  const chBySubj  = {};
+
+  // Process all chapters by subject
+  const subjects = {};
+  const chBySubj = {};
 
   for (const ch of chapters) {
     const s = ch.subject;
@@ -99,9 +136,9 @@ export async function buildMentorContext(userId) {
     else                                   subjects[s].notStarted++;
 
     chBySubj[s].push({
-      num:    ch.chapterNumber,
-      name:   ch.chapterName,
-      status: ch.status || 'not_started',
+      num:             ch.chapterNumber,
+      name:            ch.chapterName,
+      status:          ch.status || 'not_started',
       completedTopics: ch.completedTopics || 0,
       totalTopics:     ch.totalTopics     || null,
     });
@@ -118,8 +155,8 @@ export async function buildMentorContext(userId) {
     .filter(c => c.status === 'in_progress')
     .map(c => ({ subject: c.subject, num: c.chapterNumber, name: c.chapterName }));
 
-  // Targets
-  const thisMonthTargets = (targets.chapters || []).map(t => ({
+  // Monthly targets
+  const thisMonthTargets = (targets?.chapters || []).map(t => ({
     subject: t.subject, chapter: t.chapterName, done: !!t.completed, difficulty: t.difficulty,
   }));
 
@@ -132,8 +169,8 @@ export async function buildMentorContext(userId) {
     avgMastery: vocabStats.avgMastery    || 0,
   };
 
-  // Last 7 days session logs
-  const last7 = (weekly.byDay || []).map(d => ({
+  // Last 7 days
+  const last7 = (weekly?.byDay || []).map(d => ({
     date:      d.date,
     completed: d.completedSessions || 0,
     missed:    d.missedSessions    || 0,
@@ -143,17 +180,16 @@ export async function buildMentorContext(userId) {
     subjects:  (d.sessions || []).filter(s => s.completed !== false).map(s => s.subject),
   }));
 
-  const streak = weekly.streak || 0;
+  const streak = weekly?.streak || 0;
 
   // Revisions due
   const rawRevisions = Array.isArray(revisions)
     ? revisions
-    : [...(revisions.dueToday || []), ...(revisions.overdue || [])];
-  const revisionsDue = rawRevisions.slice(0, 5).map(r => ({
-    subject: r.subject, chapterName: r.chapterName, count: r.revisionCount,
+    : [...(revisions?.dueToday || []), ...(revisions?.overdue || [])];
+  const revisionsDue = rawRevisions.slice(0, 6).map(r => ({
+    subject: r.subject, chapterName: r.chapterName, count: r.revisionCount || 0,
   }));
 
-  // Deadlines
   const daysDiff = (t) => Math.max(0, Math.round((new Date(t).getTime() - Date.now()) / 86400000));
 
   return {
@@ -176,43 +212,72 @@ export async function buildMentorContext(userId) {
   };
 }
 
-// ── Format Context into User Message for Analysis ─────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Build Analysis User Message
+// ─────────────────────────────────────────────────────────────────────────────
 function buildAnalysisUserMessage(ctx) {
-  const pcm = ['Physics','Chemistry','HigherMath'].map(s => {
+  // BUET core (PCM)
+  const pcm = ['Physics', 'Chemistry', 'HigherMath'].map(s => {
     const sm = ctx.subjects[s];
-    if (!sm) return `${s}: তথ্য নেই`;
-    const chs      = ctx.chBySubj[s] || [];
-    const inProg   = chs.filter(c => c.status === 'in_progress').map(c => `Ch${c.num} ${c.name}`).join(', ');
-    const delayed  = chs.filter(c => c.status === 'not_started').slice(0,3).map(c => `Ch${c.num}`).join(',');
-    return `${s}: ${sm.completed}/${sm.total} chapter শেষ (${sm.pct}%) | চলছে: ${inProg||'কিছু না'} | Not started: ${sm.notStarted}${delayed ? ` (next: Ch${delayed})` : ''}`;
+    if (!sm) return `**${s}**: তথ্য নেই`;
+    const chs    = ctx.chBySubj[s] || [];
+    const inProg = chs.filter(c => c.status === 'in_progress')
+                      .map(c => `Ch${c.num} "${c.name}"`).join(', ');
+    const notStartedNext = chs.filter(c => c.status === 'not_started')
+                              .slice(0, 3).map(c => `Ch${c.num}`).join(', ');
+    return `**${s}**: ${sm.completed}/${sm.total} শেষ (${sm.pct}%) | চলছে: ${inProg || 'কিছু না'} | বাকি: ${sm.notStarted} chapter${notStartedNext ? ` (পরেরটা: ${notStartedNext})` : ''}`;
   }).join('\n');
 
-  const hsc = ['Botany','Zoology','Bangla','English','ICT'].map(s => {
+  // HSC other subjects (Golden A+ tracking)
+  const hscSubjects = ['Bangla', 'English', 'ICT', 'Botany', 'Zoology'];
+  const hsc = hscSubjects.map(s => {
     const sm = ctx.subjects[s];
-    return sm ? `${s}: ${sm.completed}/${sm.total} (${sm.pct}%)` : null;
-  }).filter(Boolean).join(' | ');
+    if (!sm) return null;
+    const chs    = ctx.chBySubj[s] || [];
+    const inProg = chs.filter(c => c.status === 'in_progress').map(c => `Ch${c.num}`).join(',');
+    return `**${s}**: ${sm.completed}/${sm.total} (${sm.pct}%)${inProg ? ` | চলছে: ${inProg}` : ''}`;
+  }).filter(Boolean).join('\n');
 
-  const perf = (ctx.last7 || []).map(d =>
-    `${d.date}: ✅${d.completed} ❌${d.missed}${d.subjects.length?` [${d.subjects.join(',')}]`:''} | ${d.wokeUp?'⏰6AM':'❌woke'} | ${d.preStudy?'📖Pre':''}${d.totalMin?` ${d.totalMin}min`:''}`
-  ).join('\n');
+  // Last 7 days performance
+  const perf = (ctx.last7 || []).map(d => {
+    const subj = d.subjects.length ? ` [${d.subjects.join(',')}]` : '';
+    const wake = d.wokeUp ? '⏰6AM' : '❌wake';
+    const pre  = d.preStudy ? ' 📖pre-study' : '';
+    const min  = d.totalMin ? ` ${d.totalMin}m` : '';
+    return `${d.date}: ✅${d.completed} ❌${d.missed}${subj} | ${wake}${pre}${min}`;
+  }).join('\n') || 'কোনো session data নেই';
 
+  // Delayed chapters (in-progress)
+  const delayed = (ctx.delayedChapters || [])
+    .map(c => `${c.subject} Ch${c.num}: "${c.name}"`)
+    .join('\n') || 'কোনো delay নেই';
+
+  // Revisions due
+  const revDue = (ctx.revisionsDue || []).length
+    ? ctx.revisionsDue.map(r => `${r.subject} "${r.chapterName}" (revision #${r.count + 1})`).join(', ')
+    : 'কোনো revision due নেই';
+
+  // Monthly targets
   const tgt = (ctx.thisMonthTargets || []).length
-    ? ctx.thisMonthTargets.map(t => `${t.subject} ${t.chapter}: ${t.done?'✅':'⬜'} (${t.difficulty || 'Normal'})`).join(' | ')
+    ? ctx.thisMonthTargets.map(t => `${t.subject} "${t.chapter}": ${t.done ? '✅' : '⬜'} (${t.difficulty || 'Normal'})`).join(' | ')
     : 'কোনো target নেই';
 
   return `আজ: ${ctx.today} | Streak: ${ctx.streak} দিন
-HSC Deadline: ${ctx.hscDeadline} → ${ctx.daysToHscDeadline} দিন বাকি
+HSC Prep Deadline: ${ctx.hscDeadline} → ${ctx.daysToHscDeadline} দিন বাকি
 HSC Exam: ${ctx.hscExam} → ${ctx.daysToHscExam} দিন বাকি
 BUET Exam: ${ctx.buetExam} → ${ctx.daysToButExam} দিন বাকি
 
-━━━ BUET Core (PCM) ━━━
+━━━ BUET Core — PCM Progress ━━━
 ${pcm}
 
-━━━ Delayed/In-Progress Chapters ━━━
-${(ctx.delayedChapters || []).map(c => `${c.subject} Ch${c.num}: ${c.name}`).join('\n')||'কোনো delay নেই'}
+━━━ HSC অন্যান্য বিষয় (Golden A+ tracking) ━━━
+${hsc || 'তথ্য নেই (Bangla/English/ICT data add করো)'}
 
-━━━ HSC Other Subjects ━━━
-${hsc||'তথ্য নেই'}
+━━━ এখন যে Chapter-এ আটকে আছি ━━━
+${delayed}
+
+━━━ Revision Due ━━━
+${revDue}
 
 ━━━ Last 7 Days Performance ━━━
 ${perf}
@@ -221,17 +286,19 @@ ${perf}
 ${tgt}
 
 ━━━ Vocabulary ━━━
-Total: ${ctx.vocabStats.total} | Mastered: ${ctx.vocabStats.mastered} | Due review: ${ctx.vocabStats.due} | আজ added: ${ctx.vocabStats.todayAdded}
+Total: ${ctx.vocabStats.total} | Mastered: ${ctx.vocabStats.mastered} | Due: ${ctx.vocabStats.due} | আজ যোগ: ${ctx.vocabStats.todayAdded}
 
-উপরের সব data দেখে আজকের mentor analysis দাও।`;
+উপরের সব data দেখে আজকের জন্য detailed mentor analysis দাও। Data থেকে specific সমস্যা বের করো।`;
 }
 
-// ── Call Netlify AI Function ──────────────────────────────────────────────────
-async function callAiProxy(messages, maxTokens = 1800) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Call Netlify AI Proxy
+// ─────────────────────────────────────────────────────────────────────────────
+async function callAiProxy(messages, maxTokens = 2000) {
   const res = await fetch(FUNCTION_URL, {
-    method: 'POST',
+    method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, maxTokens }),
+    body:    JSON.stringify({ messages, maxTokens }),
   });
 
   const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
@@ -241,192 +308,176 @@ async function callAiProxy(messages, maxTokens = 1800) {
   return data;
 }
 
-// ── Analysis Firestore Functions ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Analysis — Firestore Functions
+// ─────────────────────────────────────────────────────────────────────────────
 
 /** Get cached daily analysis from Firestore */
 export async function getCachedAnalysis(userId) {
   if (!userId) return { analysis: null };
-  const today = getBSTDateString();
+  const today  = getBSTDateString();
   const docRef = doc(db, 'users', userId, 'mentorAnalysis', today);
-  const snap = await getDoc(docRef);
-  if (snap.exists()) {
-    return { analysis: snap.data(), cached: true };
-  }
+  const snap   = await getDoc(docRef);
+  if (snap.exists()) return { analysis: snap.data(), cached: true };
   return { analysis: null, cached: false };
 }
 
-/** Generate new analysis, call AI proxy, and save to Firestore */
+/** Generate new analysis → save to Firestore → return */
 export async function generateAnalysis(userId, forceRefresh = false) {
   if (!userId) throw new Error('User ID required');
   const today = getBSTDateString();
 
-  // If not force refresh, check cache first
   if (!forceRefresh) {
     const cached = await getCachedAnalysis(userId);
     if (cached.analysis) return cached;
   }
 
-  // Build full context
   const context = await buildMentorContext(userId);
   const userMsg = buildAnalysisUserMessage(context);
 
-  const messages = [
+  const aiResult = await callAiProxy([
     { role: 'system', content: MENTOR_SYSTEM_PROMPT },
     { role: 'user',   content: userMsg },
-  ];
+  ], 2200);
 
-  const aiResult = await callAiProxy(messages, 1800);
-
-  // Extract readiness
-  const bMatch = aiResult.text.match(/BUET.{0,30}(High|Medium|Low|Moderate|Critical|Strong|Weak)/i);
+  const bMatch       = aiResult.text.match(/BUET.{0,40}(High|Medium|Low|Moderate|Critical|Strong|Weak)/i);
   const buetReadiness = bMatch ? bMatch[1] : 'Moderate';
 
   const analysisData = {
-    text: aiResult.text,
+    text:        aiResult.text,
     generatedAt: new Date().toISOString(),
     buetReadiness,
     today,
-    modelUsed: aiResult.modelUsed || 'primary',
+    modelUsed:   aiResult.modelUsed || 'primary',
   };
 
-  // Save to Firestore
-  const docRef = doc(db, 'users', userId, 'mentorAnalysis', today);
-  await setDoc(docRef, analysisData, { merge: true });
-
+  await setDoc(doc(db, 'users', userId, 'mentorAnalysis', today), analysisData, { merge: true });
   return { analysis: analysisData, cached: false };
 }
 
-// ── Chat & Limit Firestore Functions ──────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat — Firestore Functions
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** Get today's question usage from Firestore */
 export async function getChatUsage(userId) {
   if (!userId) return { questionsUsed: 0, dailyLimit: null, limitSet: false };
-  const today = getBSTDateString();
-  const docRef = doc(db, 'users', userId, 'mentorUsage', today);
-  const snap = await getDoc(docRef);
+  const today  = getBSTDateString();
+  const snap   = await getDoc(doc(db, 'users', userId, 'mentorUsage', today));
   if (snap.exists()) {
-    const data = snap.data();
-    return { ...data, limitSet: data.dailyLimit !== undefined && data.dailyLimit !== null, date: today };
+    const d = snap.data();
+    return { ...d, limitSet: d.dailyLimit !== undefined && d.dailyLimit !== null, date: today };
   }
   return { questionsUsed: 0, dailyLimit: null, limitSet: false, date: today };
 }
 
-/** Set today's daily question limit in Firestore */
 export async function setDailyLimit(userId, limitVal) {
   if (!userId) throw new Error('User ID required');
   const today = getBSTDateString();
-  const docRef = doc(db, 'users', userId, 'mentorUsage', today);
-  await setDoc(docRef, {
-    dailyLimit: limitVal,
+  await setDoc(doc(db, 'users', userId, 'mentorUsage', today), {
+    dailyLimit:    limitVal,
     questionsUsed: 0,
-    date: today,
-    limitSetAt: new Date().toISOString(),
+    date:          today,
+    limitSetAt:    new Date().toISOString(),
   }, { merge: true });
-
   return { success: true, dailyLimit: limitVal, questionsUsed: 0 };
 }
 
-/** Get chat history for a specific date from Firestore */
 export async function getChatHistory(userId, date) {
   if (!userId || !date) return { messages: [] };
-  const docRef = doc(db, 'users', userId, 'mentorChats', date);
-  const snap = await getDoc(docRef);
+  const snap = await getDoc(doc(db, 'users', userId, 'mentorChats', date));
   if (snap.exists()) {
-    const data = snap.data();
-    return { messages: data.messages || [], questionCount: data.questionCount || 0, date };
+    const d = snap.data();
+    return { messages: d.messages || [], questionCount: d.questionCount || 0, date };
   }
   return { messages: [], questionCount: 0, date };
 }
 
-/** List all dates with chat history from Firestore */
 export async function getChatHistoryDates(userId) {
   if (!userId) return { dates: [] };
-  const chatsCol = collection(db, 'users', userId, 'mentorChats');
-  const q = query(chatsCol, orderBy('updatedAt', 'desc'), limit(30));
+  const q    = query(collection(db, 'users', userId, 'mentorChats'), orderBy('updatedAt', 'desc'), limit(30));
   const snap = await getDocs(q);
-  const dates = snap.docs.map(d => ({
-    date:          d.id,
-    questionCount: d.data().questionCount || 0,
-    topicSummary:  d.data().topicSummary  || '',
-    updatedAt:     d.data().updatedAt,
-  }));
-  return { dates };
+  return {
+    dates: snap.docs.map(d => ({
+      date:          d.id,
+      questionCount: d.data().questionCount || 0,
+      topicSummary:  d.data().topicSummary  || '',
+      updatedAt:     d.data().updatedAt,
+    })),
+  };
 }
 
-/** Send chat message to mentor */
+/** Send chat message → call AI → save to Firestore */
 export async function sendChatMessage(userId, message, chatHistory = [], contextSummary = null) {
   if (!userId) throw new Error('User ID required');
   if (!message?.trim()) throw new Error('Message required');
   const today = getBSTDateString();
 
-  // Check limit
-  const usageDocRef = doc(db, 'users', userId, 'mentorUsage', today);
-  const usageSnap   = await getDoc(usageDocRef);
-  const usageData   = usageSnap.exists() ? usageSnap.data() : { questionsUsed: 0, dailyLimit: null };
+  // Check daily limit from Firestore
+  const usageRef  = doc(db, 'users', userId, 'mentorUsage', today);
+  const usageSnap = await getDoc(usageRef);
+  const usageData = usageSnap.exists()
+    ? usageSnap.data()
+    : { questionsUsed: 0, dailyLimit: null };
 
-  if (usageData.dailyLimit !== 'unlimited' && usageData.dailyLimit !== null && usageData.dailyLimit !== undefined) {
-    if ((usageData.questionsUsed || 0) >= Number(usageData.dailyLimit)) {
-      const err = new Error('আজকের question limit শেষ।');
-      err.status = 429;
-      throw err;
-    }
+  const isUnlimited = !usageData.dailyLimit || usageData.dailyLimit === 'unlimited';
+  if (!isUnlimited && (usageData.questionsUsed || 0) >= Number(usageData.dailyLimit)) {
+    const e = new Error('আজকের question limit শেষ।');
+    e.status = 429;
+    throw e;
   }
 
-  // Format context for chat
+  // Build context snippet for AI
   let contextSnippet = 'Student context unavailable.';
   if (contextSummary) {
-    const subjLines = Object.entries(contextSummary.subjects || {}).map(([s, d]) =>
-      `${s}: ${d.pct}% (${d.completed}/${d.total})`
-    ).join(' | ');
-    const delayed = (contextSummary.delayedChapters || []).map(c => `${c.subject} Ch${c.num}`).join(', ');
-    contextSnippet = `Today: ${contextSummary.today} | Streak: ${contextSummary.streak}d
-PCM & Subjects: ${subjLines}
-Delayed: ${delayed || 'None'}`;
+    const subjLines = Object.entries(contextSummary.subjects || {})
+      .map(([s, d]) => `${s}: ${d.pct}% (${d.completed}/${d.total})`)
+      .join(' | ');
+    const delayed = (contextSummary.delayedChapters || [])
+      .map(c => `${c.subject} Ch${c.num}`).join(', ');
+    contextSnippet = `আজ: ${contextSummary.today} | Streak: ${contextSummary.streak}d
+Progress: ${subjLines}
+In-progress: ${delayed || 'None'}`;
     if (contextSummary.todayAnalysis) {
-      contextSnippet += `\nToday's Analysis Preview: ${contextSummary.todayAnalysis.slice(0, 500)}...`;
+      contextSnippet += `\n\nআজকের Analysis Summary:\n${contextSummary.todayAnalysis.slice(0, 600)}`;
     }
   }
 
   const messages = [
     { role: 'system',    content: CHAT_SYSTEM_PROMPT },
-    { role: 'user',      content: `━━━ Current Student Status ━━━\n${contextSnippet}` },
-    { role: 'assistant', content: 'ঠিক আছে, আমি তোমার সব progress দেখছি। কী জানতে চাও?' },
-    ...chatHistory.slice(-10).map(m => ({ role: m.role, content: m.content })),
+    { role: 'user',      content: `━━━ Saiful-এর Current Status ━━━\n${contextSnippet}` },
+    { role: 'assistant', content: 'তোমার সব data দেখলাম। কী জানতে চাও?' },
+    ...chatHistory.slice(-12).map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ];
 
-  const aiResult = await callAiProxy(messages, 900);
+  const aiResult  = await callAiProxy(messages, 1000);
   const timestamp = new Date().toISOString();
 
   // Save chat to Firestore
-  const chatDocRef = doc(db, 'users', userId, 'mentorChats', today);
-  await setDoc(chatDocRef, {
+  await setDoc(doc(db, 'users', userId, 'mentorChats', today), {
     messages: arrayUnion(
-      { role: 'user',      content: message,       timestamp },
-      { role: 'assistant', content: aiResult.text, timestamp }
+      { role: 'user',      content: message,         timestamp },
+      { role: 'assistant', content: aiResult.text,   timestamp }
     ),
     questionCount: increment(1),
-    updatedAt: timestamp,
-    date: today,
+    updatedAt:     timestamp,
+    date:          today,
   }, { merge: true });
 
-  // Increment usage count
-  await setDoc(usageDocRef, {
-    questionsUsed: increment(1),
-    date: today,
-  }, { merge: true });
-
-  const newQuestionsUsed = (usageData.questionsUsed || 0) + 1;
+  // Increment usage
+  await setDoc(usageRef, { questionsUsed: increment(1), date: today }, { merge: true });
 
   return {
-    response: aiResult.text,
-    questionsUsed: newQuestionsUsed,
-    dailyLimit: usageData.dailyLimit,
+    response:      aiResult.text,
+    questionsUsed: (usageData.questionsUsed || 0) + 1,
+    dailyLimit:    usageData.dailyLimit,
     timestamp,
   };
 }
 
-// ── Context Summary for Chat ──────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Summary for Chat (lightweight)
+// ─────────────────────────────────────────────────────────────────────────────
 export function buildChatContextSummary(fullContext, todayAnalysisText = null) {
   if (!fullContext) return null;
   return {
@@ -437,7 +488,7 @@ export function buildChatContextSummary(fullContext, todayAnalysisText = null) {
         pct: d.pct, completed: d.completed, total: d.total, inProgress: d.inProgress,
       }])
     ),
-    delayedChapters: fullContext.delayedChapters?.slice(0, 5),
+    delayedChapters: fullContext.delayedChapters?.slice(0, 6),
     vocabStats:      fullContext.vocabStats,
     todayAnalysis:   todayAnalysisText,
   };
