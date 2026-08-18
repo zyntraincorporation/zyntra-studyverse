@@ -33,22 +33,20 @@ export function useMyUnlockProgress() {
   useEffect(() => {
     if (partner?.uid || partner?.id) {
       setResolvedPartnerUid(partner.uid || partner.id);
-      return;
     }
-    if (!user?.email) return;
+    if (!user?.uid) return;
 
     const partnerEmail = getPartnerEmail(user.email);
-    if (!partnerEmail) return;
 
-    // Real-time subscribe to partner user document
-    const unsub = subscribeToPartner(partnerEmail, (p) => {
+    // Real-time subscribe to partner user document (with myUid fallback)
+    const unsub = subscribeToPartner(partnerEmail, user.uid, (p) => {
       if (p) {
         setPartner(p);
         setResolvedPartnerUid(p.uid || p.id);
       }
     });
     return unsub;
-  }, [partner?.uid, partner?.id, user?.email, setPartner]);
+  }, [partner?.uid, partner?.id, user?.uid, user?.email, setPartner]);
 
   // ── My sessions (for study-minutes display, not unlock) ────────────────────
   useEffect(() => {

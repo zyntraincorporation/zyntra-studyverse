@@ -277,23 +277,43 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
   }, []);
 
   // ── Auto-scroll + new-messages button logic ───────────────────────────────
+  const isFirstLoadRef = useRef(true);
+
+  const scrollToBottomNow = useCallback((behavior = 'instant') => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior });
+    }
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, []);
+
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || loading || !messages.length) return;
+
+    if (isFirstLoadRef.current) {
+      isFirstLoadRef.current = false;
+      // Multiple passes to ensure DOM, fonts and media containers are laid out at bottom
+      scrollToBottomNow('instant');
+      const t1 = setTimeout(() => scrollToBottomNow('instant'), 50);
+      const t2 = setTimeout(() => scrollToBottomNow('instant'), 150);
+      const t3 = setTimeout(() => scrollToBottomNow('smooth'), 300);
+      prevLenRef.current = messages.length;
+      return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }
 
     const newMsgCount = messages.length - prevLenRef.current;
     const hasNewFromPartner = newMsgCount > 0 &&
       messages.slice(-newMsgCount).some(m => m.senderId !== user?.uid);
 
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
 
-    if (nearBottom || messages.length <= 1 || !hasNewFromPartner) {
-      // Smooth scroll to bottom
-      bottomRef.current?.scrollIntoView({ behavior: prevLenRef.current === 0 ? 'instant' : 'smooth' });
+    if (nearBottom || !hasNewFromPartner) {
+      scrollToBottomNow('smooth');
       setShowNewBtn(false);
       setNewCount(0);
     } else {
-      // User is scrolled up — show "new messages" button
       if (hasNewFromPartner) {
         setNewCount(c => c + newMsgCount);
         setShowNewBtn(true);
@@ -301,7 +321,7 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
     }
 
     prevLenRef.current = messages.length;
-  }, [messages.length]); // eslint-disable-line
+  }, [loading, messages, scrollToBottomNow, user?.uid]);
 
   // ── Load older messages (pagination) ──────────────────────────────────────
   const handleLoadMore = useCallback(async () => {

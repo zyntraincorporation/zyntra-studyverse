@@ -75,7 +75,7 @@ function AuthInitializer() {
         const partnerEmail = getPartnerEmail(cleanEmail);
         if (partnerEmail) {
           if (partnerUnsub) partnerUnsub();
-          partnerUnsub = subscribeToPartner(partnerEmail, (partner) => {
+          partnerUnsub = subscribeToPartner(partnerEmail, firebaseUser.uid, (partner) => {
             if (partner) {
               setPartner(partner);
             }

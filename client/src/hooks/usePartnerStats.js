@@ -36,15 +36,14 @@ export function usePartnerStats() {
 
   // Auto-resolve partner if missing
   useEffect(() => {
-    if (partnerUid || !user?.email) return;
+    if (!user?.uid) return;
     const partnerEmail = getPartnerEmail(user.email);
-    if (!partnerEmail) return;
 
-    const unsub = subscribeToPartner(partnerEmail, (p) => {
+    const unsub = subscribeToPartner(partnerEmail, user.uid, (p) => {
       if (p) setPartner(p);
     });
     return unsub;
-  }, [partnerUid, user?.email, setPartner]);
+  }, [user?.uid, user?.email, setPartner]);
 
   useEffect(() => {
     if (!partnerUid) return;

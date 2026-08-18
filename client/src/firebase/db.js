@@ -42,52 +42,63 @@ export async function getUserProfile(uid) {
   return snap.exists() ? { id: snap.id, uid: snap.id, ...snap.data() } : null;
 }
 
-export async function findUserByEmail(email) {
-  if (!email) return null;
-  const cleanEmail = email.toLowerCase().trim();
-  const q    = query(col('users'), where('email', '==', cleanEmail), limit(1));
-  const snap = await getDocs(q);
-  if (!snap.empty) {
-    const d = snap.docs[0];
-    return { id: d.id, uid: d.id, ...d.data() };
-  }
-  // Fallback scan: handles existing documents with uppercase/untrimmed email fields
+export async function findUserByEmail(email, myUid = null) {
+  const cleanEmail = (email || '').toLowerCase().trim();
   try {
     const allSnap = await getDocs(col('users'));
-    const match = allSnap.docs.find(d => {
-      const dEmail = d.data().email;
-      return dEmail && dEmail.toLowerCase().trim() === cleanEmail;
-    });
-    if (match) {
-      return { id: match.id, uid: match.id, ...match.data() };
+    if (!allSnap.empty) {
+      let match = allSnap.docs.find(d => {
+        const dEmail = (d.data().email || '').toLowerCase().trim();
+        return cleanEmail && dEmail === cleanEmail;
+      });
+      if (!match && myUid) {
+        match = allSnap.docs.find(d => d.id !== myUid);
+      }
+      if (match) {
+        return { id: match.id, uid: match.id, ...match.data() };
+      }
     }
   } catch (err) {
-    console.warn('[findUserByEmail] fallback failed:', err);
+    console.warn('[findUserByEmail] error:', err);
   }
   return null;
 }
 
 /**
  * Real-time listener for partner user doc.
- * Updates partner profile and UID reactively without needing manual page reloads.
+ * Matches partner by email or by picking the other user in the couple app (id !== myUid).
  */
-export function subscribeToPartner(partnerEmail, callback) {
-  if (!partnerEmail) return () => {};
-  const cleanEmail = partnerEmail.toLowerCase().trim();
-  const q = query(col('users'), where('email', '==', cleanEmail), limit(1));
-  return onSnapshot(q, snap => {
-    if (!snap.empty) {
-      const d = snap.docs[0];
-      callback({ id: d.id, uid: d.id, ...d.data() });
+export function subscribeToPartner(partnerEmail, myUidOrCallback, maybeCallback) {
+  const myUid = typeof myUidOrCallback === 'string' ? myUidOrCallback : null;
+  const callback = typeof myUidOrCallback === 'function' ? myUidOrCallback : maybeCallback;
+  if (!callback) return () => {};
+
+  const cleanEmail = (partnerEmail || '').toLowerCase().trim();
+
+  return onSnapshot(col('users'), snap => {
+    if (snap.empty) {
+      callback(null);
+      return;
+    }
+    // 1. Try to find by email
+    let partnerDoc = snap.docs.find(d => {
+      const dEmail = (d.data().email || '').toLowerCase().trim();
+      return cleanEmail && dEmail === cleanEmail;
+    });
+
+    // 2. If not found by email, pick the other user whose ID !== myUid
+    if (!partnerDoc && myUid) {
+      partnerDoc = snap.docs.find(d => d.id !== myUid);
+    }
+
+    if (partnerDoc) {
+      callback({ id: partnerDoc.id, uid: partnerDoc.id, ...partnerDoc.data() });
     } else {
-      // Fallback
-      findUserByEmail(cleanEmail).then(p => {
-        if (p) callback(p);
-      }).catch(() => {});
+      callback(null);
     }
   }, (err) => {
     console.warn('[subscribeToPartner] onSnapshot error:', err);
-    findUserByEmail(cleanEmail).then(p => {
+    findUserByEmail(cleanEmail, myUid).then(p => {
       if (p) callback(p);
     }).catch(() => {});
   });
@@ -712,63 +723,84 @@ function getBSTDayBounds() {
   return { bstMidnightUTC, bstEndOfDayUTC };
 }
 
+function isDocDateToday(val, startMs, endMs) {
+  if (!val) return false;
+  let ms = null;
+  if (typeof val.toDate === 'function') ms = val.toDate().getTime();
+  else if (val instanceof Date) ms = val.getTime();
+  else if (typeof val === 'number') ms = val;
+  else if (typeof val === 'string') ms = new Date(val).getTime();
+  else if (val && typeof val.seconds === 'number') ms = val.seconds * 1000;
+  return ms !== null && ms >= startMs && ms <= endMs;
+}
+
 /**
  * Counts today's vocabulary for a user.
  * Counts: words CREATED today  UNION  words REVIEWED today (by distinct wordId).
  * Uses two parallel onSnapshot listeners whose results are merged.
- * This ensures Recall Arena / SmartRevision practice also counts toward the 20-word gate.
  */
 export function subscribeToTodayVocabCount(userId, callback) {
+  if (!userId) return () => {};
   const { bstMidnightUTC, bstEndOfDayUTC } = getBSTDayBounds();
-  const midTs = Timestamp.fromDate(bstMidnightUTC);
-  const endTs = Timestamp.fromDate(bstEndOfDayUTC);
+  const startMs = bstMidnightUTC.getTime();
+  const endMs   = bstEndOfDayUTC.getTime();
 
-  let wordsCreatedToday = new Set();   // doc IDs of words created today
-  let wordsReviewedToday = new Set();  // wordIds reviewed today
+  let wordsCreatedToday = new Set();
+  let wordsReviewedToday = new Set();
 
   const emit = () => {
     const union = new Set([...wordsCreatedToday, ...wordsReviewedToday]);
     callback(union.size);
   };
 
-  // Listener 1: words created today
+  // Listener 1: words created/updated today
   const unsubWords = onSnapshot(
-    query(
-      vocabWordsCol(userId),
-      where('createdAt', '>=', midTs),
-      where('createdAt', '<=', endTs)
-    ),
+    vocabWordsCol(userId),
     snap => {
-      wordsCreatedToday = new Set(snap.docs.map(d => d.id));
+      wordsCreatedToday = new Set(
+        snap.docs
+          .filter(d => {
+            const data = d.data();
+            return isDocDateToday(data.createdAt, startMs, endMs) ||
+                   isDocDateToday(data.updatedAt, startMs, endMs);
+          })
+          .map(d => d.id)
+      );
       emit();
     },
-    () => {}
+    (err) => { console.warn('[TodayVocab] words onSnapshot error:', err); }
   );
 
   // Listener 2: reviews done today (each review has a wordId field)
   const unsubReviews = onSnapshot(
-    query(
-      vocabReviewCol(userId),
-      where('reviewedAt', '>=', midTs),
-      where('reviewedAt', '<=', endTs)
-    ),
+    vocabReviewCol(userId),
     snap => {
-      wordsReviewedToday = new Set(snap.docs.map(d => d.data().wordId).filter(Boolean));
+      wordsReviewedToday = new Set(
+        snap.docs
+          .filter(d => {
+            const data = d.data();
+            return isDocDateToday(data.reviewedAt, startMs, endMs) ||
+                   isDocDateToday(data.createdAt, startMs, endMs);
+          })
+          .map(d => d.data().wordId || d.id)
+          .filter(Boolean)
+      );
       emit();
     },
-    () => {}
+    (err) => { console.warn('[TodayVocab] reviews onSnapshot error:', err); }
   );
 
   return () => { unsubWords(); unsubReviews(); };
 }
 
 /**
- * Counts today's vocabulary for a partner user (same dual-listener logic).
+ * Counts today's vocabulary for a partner user (same robust dual-listener logic).
  */
 export function subscribeToPartnerVocabCount(partnerUid, callback) {
+  if (!partnerUid) return () => {};
   const { bstMidnightUTC, bstEndOfDayUTC } = getBSTDayBounds();
-  const midTs = Timestamp.fromDate(bstMidnightUTC);
-  const endTs = Timestamp.fromDate(bstEndOfDayUTC);
+  const startMs = bstMidnightUTC.getTime();
+  const endMs   = bstEndOfDayUTC.getTime();
 
   let wordsCreatedToday  = new Set();
   let wordsReviewedToday = new Set();
@@ -779,29 +811,38 @@ export function subscribeToPartnerVocabCount(partnerUid, callback) {
   };
 
   const unsubWords = onSnapshot(
-    query(
-      collection(db, 'vocabulary', partnerUid, 'words'),
-      where('createdAt', '>=', midTs),
-      where('createdAt', '<=', endTs)
-    ),
+    collection(db, 'vocabulary', partnerUid, 'words'),
     snap => {
-      wordsCreatedToday = new Set(snap.docs.map(d => d.id));
+      wordsCreatedToday = new Set(
+        snap.docs
+          .filter(d => {
+            const data = d.data();
+            return isDocDateToday(data.createdAt, startMs, endMs) ||
+                   isDocDateToday(data.updatedAt, startMs, endMs);
+          })
+          .map(d => d.id)
+      );
       emit();
     },
-    () => {}
+    (err) => { console.warn('[PartnerVocab] words onSnapshot error:', err); }
   );
 
   const unsubReviews = onSnapshot(
-    query(
-      collection(db, 'vocabulary', partnerUid, 'reviews'),
-      where('reviewedAt', '>=', midTs),
-      where('reviewedAt', '<=', endTs)
-    ),
+    collection(db, 'vocabulary', partnerUid, 'reviews'),
     snap => {
-      wordsReviewedToday = new Set(snap.docs.map(d => d.data().wordId).filter(Boolean));
+      wordsReviewedToday = new Set(
+        snap.docs
+          .filter(d => {
+            const data = d.data();
+            return isDocDateToday(data.reviewedAt, startMs, endMs) ||
+                   isDocDateToday(data.createdAt, startMs, endMs);
+          })
+          .map(d => d.data().wordId || d.id)
+          .filter(Boolean)
+      );
       emit();
     },
-    () => {}
+    (err) => { console.warn('[PartnerVocab] reviews onSnapshot error:', err); }
   );
 
   return () => { unsubWords(); unsubReviews(); };
