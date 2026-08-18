@@ -10,7 +10,7 @@ import {
   ChevronRight, Play, Trophy, Sparkles, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { challengeAPI } from '../../lib/api';
-import { getBSTDateString } from '../../lib/bst';
+import { getChallengeCycleDate } from '../../lib/bst';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -126,8 +126,8 @@ export default function BuetDailyChallenge() {
   const [elapsed,      setElapsed]      = useState(0);
   const [timerActive,  setTimerActive]  = useState(false);
   const [completing,   setCompleting]   = useState(false);
-  const timerRef = useRef(null);
-  const today    = getBSTDateString();
+  const timerRef  = useRef(null);
+  const cycleDate = getChallengeCycleDate();
 
   // ── Fetch today's challenge ─────────────────────────────────────────────────
   const fetchChallenge = async (silent = false) => {
@@ -267,7 +267,7 @@ export default function BuetDailyChallenge() {
   }
 
   // ── Render: Past Date ───────────────────────────────────────────────────────
-  if (challenge.date !== today) {
+  if (challenge.date !== cycleDate) {
     if (challenge.status === 'completed') return <CompletedCard challenge={challenge} />;
     return <MissedCard challenge={challenge} />;
   }

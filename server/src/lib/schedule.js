@@ -52,6 +52,23 @@ function getBSTDateString(date = null) {
 }
 
 /**
+ * Returns the active BUET Daily Challenge cycle date.
+ * A cycle starts at 06:00 AM BST and runs until 05:59:59 AM BST the next calendar day.
+ */
+function getChallengeCycleDate(date = null) {
+  const d = date ? new Date(date.getTime() + BST_OFFSET_MS) : getBSTNow();
+  const hours = d.getUTCHours();
+  // If before 06:00 AM BST, it belongs to yesterday's cycle
+  if (hours < 6) {
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  const y = d.getUTCFullYear();
+  const m = pad2(d.getUTCMonth() + 1);
+  const day = pad2(d.getUTCDate());
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Returns day-of-week name (BST) e.g. "Monday"
  */
 function getBSTDayName(date = null) {
@@ -226,6 +243,7 @@ module.exports = {
   getScheduledSessionsForDate,
   getPendingSessions,
   getActiveSession,
+  getChallengeCycleDate,
   getDateRange,
   getDaySubjects,
 };

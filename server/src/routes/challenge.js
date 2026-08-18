@@ -6,7 +6,7 @@ const router = require('express').Router();
 const prisma  = require('../db/client');
 const { requireAuth } = require('../middleware/auth');
 const { getTodayChallenge, generateAndSaveChallenge } = require('../ai/challengeEngine');
-const { getBSTDateString } = require('../lib/schedule');
+const { getChallengeCycleDate, getBSTDateString } = require('../lib/schedule');
 
 router.use(requireAuth);
 
@@ -179,14 +179,14 @@ router.post('/:date/complete', async (req, res) => {
 });
 
 // ── POST /api/challenge/generate-now ─────────────────────────────────────────
-// Manual trigger for testing — generates today's challenge immediately
+// Generates or returns the challenge for the active 6:00 AM cycle date
 router.post('/generate-now', async (req, res) => {
   try {
-    const date      = getBSTDateString();
+    const date      = getChallengeCycleDate();
     const challenge = await generateAndSaveChallenge(date);
     res.json({ message: 'Generated', challenge });
   } catch (err) {
-    console.error('[Challenge] Manual generate error:', err.message);
+    console.error('[Challenge] Generate error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

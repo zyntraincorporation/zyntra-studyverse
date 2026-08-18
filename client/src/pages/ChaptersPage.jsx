@@ -6,7 +6,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
 import { useTopicStore } from '../store/useTopicStore';
-import { getChapters, seedChapters } from '../firebase/db';
+import { getChapters, seedChapters, batchGetTopicProgress } from '../firebase/db';
 import {
   CHAPTER_DATA, SUBJECT_DISPLAY_NAMES, SUBJECT_COLORS,
   HSC_SUBJECTS, normalizeLegacyStatus, getTopicsForChapter,
@@ -416,18 +416,39 @@ export default function ChaptersPage() {
     ? (overallTotal > 0 ? Math.round((overallDone / overallTotal) * 100) : 0)
     : (chapters.length ? Math.round((legacyDone / chapters.length) * 100) : 0);
 
+  // Access store's raw setter for bulk-populate on mount
+  const setTopicMapBulk = useTopicStore(s => s.setTopicMapBulk);
+
   const load = useCallback(() => {
     if (!user?.uid) return;
     setLoading(true);
     setError(null);
     getChapters(user.uid)
-      .then(ch => { setChapters(ch || []); setLoading(false); })
+      .then(async ch => {
+        setChapters(ch || []);
+        setLoading(false);
+        // Bulk-fetch all topic data on page mount so progress is immediately visible
+        if (ch?.length) {
+          try {
+            const ids = ch.map(c => c.id);
+            const maps = await batchGetTopicProgress(ids);
+            // Populate store with all chapter topic maps at once
+            Object.entries(maps).forEach(([chId, map]) => {
+              if (Object.keys(map).length > 0) {
+                useTopicStore.getState().setTopicMapBulk(chId, map);
+              }
+            });
+          } catch (e) {
+            console.warn('[ChaptersPage] bulk topic fetch failed', e);
+          }
+        }
+      })
       .catch(err => {
         console.error('[ChaptersPage]', err);
         setError('অধ্যায় লোড করতে সমস্যা হয়েছে।');
         setLoading(false);
       });
-  }, [user?.uid]);
+  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load(); }, [load]);
 

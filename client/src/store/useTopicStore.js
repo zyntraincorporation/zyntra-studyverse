@@ -69,21 +69,28 @@ export const useTopicStore = create((set, get) => ({
   // chapterMeta: { userId, subject, chapterNumber, status }
   updateTopic: async (chapterDocId, slug, update, chapterMeta) => {
     const { topicMaps } = get();
-    const current = topicMaps[chapterDocId]?.[slug] || { revisions: {} };
-
     // Build optimistic patch
+    const current = topicMaps[chapterDocId]?.[slug] || {};
+    const existingRevisions = current.revisions || {};
+
     const patch = {
       ...current,
-      revisions: { ...(current.revisions || {}) },
+      revisions: { ...existingRevisions },
       updatedAt: new Date().toISOString(),
     };
     if (typeof update.studied === 'boolean') {
       patch.studied   = update.studied;
       patch.studiedAt = update.studied ? new Date().toISOString() : null;
+      // When un-studying, clear all revisions
+      if (!update.studied) {
+        patch.revisions = {};
+      }
     }
     if (update.revisionLevel != null) {
-      patch.revisions[String(update.revisionLevel)] =
-        update.revisionDone ? new Date().toISOString() : null;
+      patch.revisions = {
+        ...patch.revisions,
+        [String(update.revisionLevel)]: update.revisionDone ? new Date().toISOString() : null,
+      };
     }
 
     // Apply optimistically to store → instant UI update
@@ -119,6 +126,17 @@ export const useTopicStore = create((set, get) => ({
     Object.keys(_listeners).forEach(k => delete _listeners[k]);
     _seeded.clear();
     set({ topicMaps: {} });
+  },
+
+  // ── setTopicMapBulk ───────────────────────────────────────────────────────────
+  // Populate store from a one-time batch read (no listener attached).
+  // Used on ChaptersPage mount to show progress immediately.
+  setTopicMapBulk: (chapterDocId, map) => {
+    set(s => ({
+      topicMaps: { ...s.topicMaps, [chapterDocId]: map },
+    }));
+    // Mark as seeded so startListening skips the getTopicProgress() fetch
+    _seeded.add(chapterDocId);
   },
 
   // ── Derived selectors ─────────────────────────────────────────────────────────

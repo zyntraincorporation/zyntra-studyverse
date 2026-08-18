@@ -17,6 +17,18 @@ export function getBSTDateString(date = null) {
   return `${y}-${m}-${day}`;
 }
 
+export function getChallengeCycleDate(date = null) {
+  const d = date ? new Date(date.getTime() + BST_OFFSET_MS) : getBSTNow();
+  const hours = d.getUTCHours();
+  if (hours < 6) {
+    d.setUTCDate(d.getUTCDate() - 1);
+  }
+  const y   = d.getUTCFullYear();
+  const m   = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export function getBSTDayName(date = null) {
   const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const d = date ? new Date(date.getTime() + BST_OFFSET_MS) : getBSTNow();

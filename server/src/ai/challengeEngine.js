@@ -4,7 +4,7 @@
 // Uses same OpenRouter API key but independent system prompt, no shared history
 // ─────────────────────────────────────────────────────────────────────────────
 const prisma = require('../db/client');
-const { getBSTDateString } = require('../lib/schedule');
+const { getChallengeCycleDate } = require('../lib/schedule');
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const CHALLENGE_MODEL    = 'openai/gpt-4o-mini';
@@ -176,14 +176,11 @@ Generate today's BUET Daily Challenge JSON now.`;
   return saved;
 }
 
-// ── Get today's challenge (generate if missing — fallback) ────────────────────
+// ── Get today's challenge for the active 6:00 AM cycle date ───────────────────
 async function getTodayChallenge() {
-  const date = getBSTDateString();
+  const date = getChallengeCycleDate();
   const existing = await prisma.buetDailyChallenge.findUnique({ where: { date } });
-  if (existing) return existing;
-  // Fallback: auto-generate if scheduler missed
-  console.log(`[ChallengeEngine] No challenge for ${date}, auto-generating (fallback)...`);
-  return generateAndSaveChallenge(date);
+  return existing || null;
 }
 
 module.exports = { generateAndSaveChallenge, getTodayChallenge };
