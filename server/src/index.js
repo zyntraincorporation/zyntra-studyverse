@@ -30,8 +30,20 @@ const PORT = process.env.PORT || 3001;
 
 // ── Security & middleware ──────────────────────────────────────────────────────
 app.use(helmet());
+// Support multiple origins via comma-separated CLIENT_ORIGIN env var
+// e.g. CLIENT_ORIGIN="http://localhost:5173,https://zyntra-studyverse.netlify.app"
+const ALLOWED_ORIGINS = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, mobile apps, same-origin)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked: ${origin}`));
+  },
   credentials: true,
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));

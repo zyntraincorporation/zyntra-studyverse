@@ -3,7 +3,7 @@ services:
     name: zyntra-api
     runtime: node
     rootDir: server
-    buildCommand: npm install && npx prisma generate && npx prisma migrate deploy
+    buildCommand: npm install && npx prisma generate && npx prisma db push
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -13,12 +13,12 @@ services:
         sync: false        # Set manually in Render dashboard
       - key: DIRECT_URL
         sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false        # Set manually in Render dashboard
       - key: APP_PIN
         sync: false
       - key: JWT_SECRET
         sync: false
       - key: CLIENT_ORIGIN
-        sync: false        # Set to your Netlify URL
+        value: "http://localhost:5173,https://zyntra-studyverse.netlify.app"
     autoDeploy: true
