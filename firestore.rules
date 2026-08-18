@@ -50,6 +50,11 @@ service cloud.firestore {
       match /mentorMemory/{docId} {
         allow read, write: if isOwner(userId);
       }
+
+      // ── BUET Daily Challenge subcollection ──────────────────────────────────
+      match /buetDailyChallenges/{date} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────
