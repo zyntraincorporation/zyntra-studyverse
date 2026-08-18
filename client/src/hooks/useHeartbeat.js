@@ -11,17 +11,16 @@ export function useHeartbeat() {
     // Send heartbeat immediately on mount
     const ping = () => {
       if (document.visibilityState === 'visible') {
-        // updatePresence automatically merges `lastSeen: now()`
         updatePresence(user.uid, {}).catch(err => {
-          console.error('[Heartbeat] Failed to update presence:', err);
+          console.warn('[Heartbeat] presence update failed:', err);
         });
       }
     };
 
     ping();
 
-    // Ping every 60 seconds
-    const intervalId = setInterval(ping, 60000);
+    // Ping every 25 seconds while visible
+    const intervalId = setInterval(ping, 25000);
 
     // Ping on visibility change (when user returns to app)
     const handleVisibilityChange = () => {
@@ -29,11 +28,17 @@ export function useHeartbeat() {
         ping();
       }
     };
+
+    // Ping on window focus
+    const handleFocus = () => ping();
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       clearInterval(intervalId);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [user?.uid]);
 }

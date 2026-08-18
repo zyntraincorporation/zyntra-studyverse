@@ -4,9 +4,9 @@ import {
 import {
   motion, AnimatePresence, useMotionValue, useTransform, animate,
 } from 'framer-motion';
-import { CornerUpLeft, ChevronDown, ArrowUp } from 'lucide-react';
+import { CornerUpLeft, ChevronDown, ArrowUp, Check, CheckCheck } from 'lucide-react';
 import { useAuthStore } from '../../store';
-import { subscribeToMessages, fetchOlderMessages } from '../../firebase/db';
+import { subscribeToMessages, fetchOlderMessages, updateLastRead } from '../../firebase/db';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -237,7 +237,7 @@ const DesktopMessageWrapper = memo(function DesktopMessageWrapper({
 
 // ── Main MessageList ──────────────────────────────────────────────────────────
 
-export default function MessageList({ onReply, partnerLastReadAt, partnerLastSeen }) {
+export default function MessageList({ onReply, partnerLastReadAt, partnerLastSeen, partnerIsActiveInChat }) {
   const user    = useAuthStore(s => s.user);
   const partner = useAuthStore(s => s.partner);
 
@@ -272,9 +272,13 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
     const unsub = subscribeToMessages(msgs => {
       setMessages(msgs);
       setLoading(false);
+      // If there are new incoming messages from partner while in chat, mark read immediately
+      if (user?.uid && msgs.some(m => m.senderId !== user.uid)) {
+        updateLastRead(user.uid).catch(() => {});
+      }
     }, 60);
     return unsub;
-  }, []);
+  }, [user?.uid]);
 
   // ── Auto-scroll + new-messages button logic ───────────────────────────────
   const isFirstLoadRef = useRef(true);
@@ -468,19 +472,27 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
                     // Read receipt logic for my messages
                     let statusIcon = null;
                     if (isMe) {
-                      const msgTime = msg.createdAt?.toDate ? msg.createdAt.toDate().getTime() : new Date(msg.createdAt).getTime();
-                      const readTime = partnerLastReadAt ? partnerLastReadAt.getTime() : 0;
-                      const seenTime = partnerLastSeen ? partnerLastSeen.getTime() : 0;
+                      const msgTime = msg.createdAt?.toDate
+                        ? msg.createdAt.toDate().getTime()
+                        : (msg.createdAt ? new Date(msg.createdAt).getTime() : Date.now());
+                      const readTime = partnerLastReadAt
+                        ? (partnerLastReadAt instanceof Date ? partnerLastReadAt.getTime() : new Date(partnerLastReadAt).getTime())
+                        : 0;
 
-                      if (msgTime <= readTime) {
-                        // Seen
-                        statusIcon = <span className="text-cyan-300 drop-shadow-[0_0_2px_rgba(34,211,238,0.8)] ml-1">✓✓</span>;
-                      } else if (seenTime >= msgTime) {
-                        // Delivered (partner was online after message was sent)
-                        statusIcon = <span className="text-white/60 ml-1">✓✓</span>;
+                      const isSeen = (readTime > 0 && msgTime <= readTime) || !!partnerIsActiveInChat;
+
+                      if (isSeen) {
+                        statusIcon = (
+                          <span className="inline-flex items-center text-cyan-300 drop-shadow-[0_0_3px_rgba(34,211,238,0.75)] ml-1 shrink-0 select-none" title="Seen">
+                            <CheckCheck size={13} strokeWidth={2.5} />
+                          </span>
+                        );
                       } else {
-                        // Sent
-                        statusIcon = <span className="text-white/60 ml-1">✓</span>;
+                        statusIcon = (
+                          <span className="inline-flex items-center text-white/50 ml-1 shrink-0 select-none" title="Sent">
+                            <Check size={12} strokeWidth={2} />
+                          </span>
+                        );
                       }
                     }
 
@@ -544,15 +556,9 @@ export default function MessageList({ onReply, partnerLastReadAt, partnerLastSee
                     );
 
                     return (
-                      <motion.div
-                        key={msg.id}
-                        initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        transition={{ duration: 0.18, ease: 'easeOut' }}
-                        layout="position"
-                      >
+                      <div key={msg.id} className="w-full">
                         {wrappedBubble}
-                      </motion.div>
+                      </div>
                     );
                   })}
 

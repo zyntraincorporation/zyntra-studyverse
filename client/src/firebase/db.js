@@ -877,12 +877,16 @@ export async function sendMessage(senderId, text, mediaUrl = null, mediaType = n
 // ── Unread Count ──────────────────────────────────────────────────────────────
 
 export async function updateLastRead(userId) {
+  if (!userId) return;
   try {
-    await setDoc(
-      doc(db, 'users', userId),
-      { chatLastReadAt: now() },
-      { merge: true }
-    );
+    const t = now();
+    await Promise.allSettled([
+      setDoc(doc(db, 'users', userId), { chatLastReadAt: t }, { merge: true }),
+      setDoc(doc(db, 'presence', userId), { chatLastReadAt: t }, { merge: true }),
+      setDoc(ref('chat', chatRoomId), {
+        lastRead: { [userId]: t }
+      }, { merge: true }),
+    ]);
   } catch (err) {
     console.error('[chat] updateLastRead failed:', err);
   }

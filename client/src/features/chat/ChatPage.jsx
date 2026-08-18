@@ -181,24 +181,44 @@ export default function ChatPage() {
     return unsub;
   }, []);
 
-  // ── Enter session when chat opens (only if unlocked) ─────────────────────
+  // ── Enter/Leave session lifecycle (handles visibility & unmount without ghosting) ──
   useEffect(() => {
-    if (!user?.uid || !isUnlocked || !sessionReady || hasEnteredRef.current) return;
-    hasEnteredRef.current = true;
-    enterChatSession(user.uid).catch(err =>
-      console.error('[ChatPage] enterChatSession failed:', err)
-    );
-  }, [user?.uid, isUnlocked, sessionReady]);
+    if (!user?.uid || !isUnlocked || !sessionReady) return;
 
-  // ── Leave session on unmount ──────────────────────────────────────────────
-  useEffect(() => {
-    return () => {
-      if (user?.uid && hasEnteredRef.current) {
-        leaveChatSession(user.uid).catch(() => {});
-        hasEnteredRef.current = false;
+    const enter = () => {
+      enterChatSession(user.uid).catch(err =>
+        console.warn('[ChatPage] enterChatSession failed:', err)
+      );
+    };
+
+    const leave = () => {
+      leaveChatSession(user.uid).catch(() => {});
+    };
+
+    enter();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        enter();
+        updateLastRead(user.uid).catch(() => {});
+      } else {
+        leave();
       }
     };
-  }, [user?.uid]);
+
+    const handleUnload = () => leave();
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
+
+    return () => {
+      leave();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
+    };
+  }, [user?.uid, isUnlocked, sessionReady]);
 
   // ── Client-side tick: recompute remainingMs from server state ─────────────
   // The server timestamps are authoritative. We just recalculate every second.
@@ -272,20 +292,37 @@ export default function ChatPage() {
     }
   }, [user, partner]);
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const isOnline = partnerStats?.lastSeen
-    ? (Date.now() - partnerStats.lastSeen.getTime() < 120000)
-    : false;
+  // ── Derived state (Real-Time Online & Clean Last Seen) ───────────────────
+  const partnerUid = partner?.uid || partner?.id;
+  const partnerInChat = !!(partnerUid && session?.activeUsers?.includes(partnerUid));
+  const lastSeenDate = partnerStats?.lastSeen instanceof Date
+    ? partnerStats.lastSeen
+    : (partnerStats?.lastSeen ? new Date(partnerStats.lastSeen) : null);
+  const lastSeenMs = lastSeenDate && !isNaN(lastSeenDate.getTime()) ? lastSeenDate.getTime() : 0;
+  const nowMs = Date.now();
 
-  const lastSeenText = isOnline
-    ? 'online'
-    : partnerStats?.lastSeen
-      ? `last seen ${formatDistanceToNow(partnerStats.lastSeen)} ago`
-      : 'offline';
+  // Online if actively in chat or heartbeat received in last 2.5 minutes
+  const isOnline = partnerInChat || (lastSeenMs > 0 && (nowMs - lastSeenMs < 150000));
+
+  let lastSeenText = 'offline';
+  if (isOnline) {
+    lastSeenText = 'online';
+  } else if (lastSeenMs > 0) {
+    const diffSec = Math.floor((nowMs - lastSeenMs) / 1000);
+    if (diffSec < 60) {
+      lastSeenText = 'last seen just now';
+    } else if (diffSec < 3600) {
+      lastSeenText = `last seen ${Math.floor(diffSec / 60)}m ago`;
+    } else if (diffSec < 86400) {
+      lastSeenText = `last seen ${Math.floor(diffSec / 3600)}h ago`;
+    } else if (diffSec < 86400 * 7) {
+      lastSeenText = `last seen ${Math.floor(diffSec / 86400)}d ago`;
+    } else {
+      lastSeenText = `last seen ${lastSeenDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+    }
+  }
 
   const sessionStatus = getSessionStatus(session, isUnlocked);
-  // Timer is PAUSED when sessionPausedAt exists and session is not expired.
-  // When resumed, enterChatSession sets sessionStartedAt = now() and clears sessionPausedAt.
   const isPaused    = !!session?.sessionPausedAt && !session?.sessionExpiredAt;
   const activeCount = session?.activeUsers?.length || 0;
 
@@ -422,6 +459,7 @@ export default function ChatPage() {
               onReply={setReplyTo}
               partnerLastReadAt={partnerStats?.chatLastReadAt}
               partnerLastSeen={partnerStats?.lastSeen}
+              partnerIsActiveInChat={session?.activeUsers?.includes(partner?.uid || partner?.id)}
             />
             <ChatInput
               isLocked={false}

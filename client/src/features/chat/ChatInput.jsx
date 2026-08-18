@@ -27,7 +27,6 @@ export default function ChatInput({ isLocked, replyTo, onCancelReply, onMessageS
   const user = useAuthStore(s => s.user);
   const isMobile = useIsMobile();
   const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const textareaRef = useRef(null);
 
   // Focus textarea when reply target is set
@@ -39,20 +38,25 @@ export default function ChatInput({ isLocked, replyTo, onCancelReply, onMessageS
     if (isLocked || !user?.uid) return;
     const trimmed = text.trim();
     if (!trimmed) return;
-    setSending(true);
+
+    // Instant optimistic input reset without dimming/blinking
+    setText('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '44px';
+    }
+
+    const replyPayload = replyTo
+      ? { id: replyTo.id, text: truncate(replyTo.text, 80), senderName: replyTo.senderName }
+      : null;
+    onCancelReply?.();
+
     try {
-      const replyPayload = replyTo
-        ? { id: replyTo.id, text: truncate(replyTo.text, 80), senderName: replyTo.senderName }
-        : null;
       await sendMessage(user.uid, trimmed, null, null, replyPayload);
-      setText('');
-      onCancelReply?.();
-      // Notify parent (triggers push to partner)
       onMessageSent?.(trimmed);
     } catch (err) {
-      console.error('Send failed:', err);
-    } finally {
-      setSending(false);
+      console.error('[ChatInput] Send failed:', err);
+      // Restore on failure
+      setText(trimmed);
     }
   }, [text, isLocked, user?.uid, replyTo, onCancelReply, onMessageSent]);
 
@@ -113,16 +117,15 @@ export default function ChatInput({ isLocked, replyTo, onCancelReply, onMessageS
           onKeyDown={handleKey}
           onInput={autoResize}
           placeholder={isMobile ? 'Type a message…' : 'Type a message… (Enter to send)'}
-          disabled={sending}
           className="flex-1 resize-none bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm
                      placeholder-slate-600 focus:outline-none focus:border-cyan-500/40
-                     disabled:opacity-50 max-h-32 overflow-y-auto transition-all"
+                     max-h-32 overflow-y-auto"
           style={{ minHeight: '44px' }}
         />
 
         <button
           onClick={handleSend}
-          disabled={sending || !text.trim()}
+          disabled={!text.trim()}
           className="p-2.5 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 text-white
                      hover:from-cyan-400 hover:to-purple-500 disabled:opacity-40 disabled:cursor-not-allowed
                      transition-all shadow-[0_0_12px_rgba(6,182,212,0.3)] shrink-0"

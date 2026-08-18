@@ -7,6 +7,7 @@ import { getPartnerEmail, getDisplayName } from './lib/constants';
 import { onForegroundMessage } from './firebase/messaging';
 import { usePresenceNotifications } from './hooks/usePresenceNotifications';
 import { useCheckinAlerts } from './hooks/useCheckinAlerts';
+import { useHeartbeat } from './hooks/useHeartbeat';
 
 
 import AppLayout       from './components/layout/AppLayout';
@@ -134,6 +135,7 @@ function FCMForegroundListener() {
 
 // ── Root App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  useHeartbeat();
   usePresenceNotifications();
   useCheckinAlerts();
 
