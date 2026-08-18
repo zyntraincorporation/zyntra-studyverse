@@ -13,6 +13,12 @@ import {
   calcChapterStudyPct, calcChapterRevisionPct,
 } from '../lib/chapters-data';
 
+// Stable empty object — MUST be outside component to prevent infinite re-render.
+// Using inline `?? {}` in a Zustand selector creates a new object each render,
+// causing Zustand to detect a "change" every cycle → React error #185.
+const EMPTY_MAP = {};
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Practice type visual config
 // ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +159,8 @@ function ChapterRow({ chapter, subjectColor }) {
   // Global store — single source of truth
   const startListening  = useTopicStore(s => s.startListening);
   const updateTopicFn   = useTopicStore(s => s.updateTopic);
-  const completionMap   = useTopicStore(s => s.topicMaps[chapter.id] ?? {});
+  const rawMap          = useTopicStore(s => s.topicMaps[chapter.id]);
+  const completionMap   = rawMap ?? EMPTY_MAP;
 
   // Start listener once chapter panel opens
   useEffect(() => {
@@ -167,7 +174,8 @@ function ChapterRow({ chapter, subjectColor }) {
   const rev2Pct   = calcChapterRevisionPct(allTopics, completionMap, 2);
   const rev3Pct   = calcChapterRevisionPct(allTopics, completionMap, 3);
   const doneCount = allTopics.filter(t => completionMap[t.slug]?.studied).length;
-  const hasData   = Object.keys(completionMap).length > 0;
+  const hasData   = !!rawMap;
+
   const loading   = open && !hasData;
 
   // chapterMeta for revision auto-queue
