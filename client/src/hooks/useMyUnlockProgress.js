@@ -12,17 +12,43 @@ import {
   subscribeToTodaySessions,
   subscribeToTodayVocabCount,
   subscribeToPartnerVocabCount,
+  subscribeToPartner,
 } from '../firebase/db';
 import { getBSTDateString } from '../lib/bst';
-import { COUPLE_CONFIG } from '../lib/constants';
+import { COUPLE_CONFIG, getPartnerEmail } from '../lib/constants';
 
 export function useMyUnlockProgress() {
-  const user    = useAuthStore(s => s.user);
-  const partner = useAuthStore(s => s.partner);
+  const user       = useAuthStore(s => s.user);
+  const partner    = useAuthStore(s => s.partner);
+  const setPartner = useAuthStore(s => s.setPartner);
 
   const [studyMinutes,      setStudyMinutes]      = useState(0);
   const [myVocabCount,      setMyVocabCount]      = useState(0);
   const [partnerVocabCount, setPartnerVocabCount] = useState(0);
+  const [resolvedPartnerUid, setResolvedPartnerUid] = useState(
+    partner?.uid || partner?.id || null
+  );
+
+  // ── Auto-resolve partner UID if not yet present in store ──────────────────
+  useEffect(() => {
+    if (partner?.uid || partner?.id) {
+      setResolvedPartnerUid(partner.uid || partner.id);
+      return;
+    }
+    if (!user?.email) return;
+
+    const partnerEmail = getPartnerEmail(user.email);
+    if (!partnerEmail) return;
+
+    // Real-time subscribe to partner user document
+    const unsub = subscribeToPartner(partnerEmail, (p) => {
+      if (p) {
+        setPartner(p);
+        setResolvedPartnerUid(p.uid || p.id);
+      }
+    });
+    return unsub;
+  }, [partner?.uid, partner?.id, user?.email, setPartner]);
 
   // ── My sessions (for study-minutes display, not unlock) ────────────────────
   useEffect(() => {
@@ -50,16 +76,13 @@ export function useMyUnlockProgress() {
   }, [user?.uid]);
 
   // ── Partner today vocab count (BST-correct, real-time) ────────────────────
-  // NOTE: partner object may have uid or id depending on how findUserByEmail
-  // resolved it. We normalise here to always get the UID string.
   useEffect(() => {
-    const partnerUid = partner?.uid || partner?.id;
-    if (!partnerUid) return;
-    const unsub = subscribeToPartnerVocabCount(partnerUid, (count) => {
+    if (!resolvedPartnerUid) return;
+    const unsub = subscribeToPartnerVocabCount(resolvedPartnerUid, (count) => {
       setPartnerVocabCount(count);
     });
     return unsub;
-  }, [partner?.uid, partner?.id]);
+  }, [resolvedPartnerUid]);
 
   const vocabThreshold = COUPLE_CONFIG.chatUnlockVocab; // 20
 

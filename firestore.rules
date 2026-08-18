@@ -11,6 +11,8 @@ service cloud.firestore {
     // presence and leaderboard for the real-time couple features)
     function isCoupleUser() {
       return isAuthed() && (
+        request.auth.token.email.lower() == 'saifulislamnirob45@gmail.com' ||
+        request.auth.token.email.lower() == 'shahinurislamliza2@gmail.com' ||
         request.auth.token.email == 'saifulislamnirob45@gmail.com' ||
         request.auth.token.email == 'shahinurislamliza2@gmail.com'
       );

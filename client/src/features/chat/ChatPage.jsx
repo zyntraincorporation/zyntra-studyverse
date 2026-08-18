@@ -261,15 +261,16 @@ export default function ChatPage() {
   // ── After message sent: mark read + push to partner ──────────────────────
   const handleMessageSent = useCallback(async (text) => {
     if (user?.uid) updateLastRead(user.uid).catch(() => {});
-    if (partner?.uid) {
-      sendPushNotification(partner.uid, {
+    const partnerUid = partner?.uid || partner?.id;
+    if (partnerUid) {
+      sendPushNotification(partnerUid, {
         title: `${user?.displayName || 'Saiful'} 💬`,
         body:  text.length > 80 ? text.slice(0, 80) + '…' : text,
         type:  'chat_message',
         data:  { senderUid: user.uid, senderName: user?.displayName || '' },
       }).catch(() => {});
     }
-  }, [user, partner?.uid]);
+  }, [user, partner]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
   const isOnline = partnerStats?.lastSeen

@@ -5,34 +5,52 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../store';
-import { subscribeToPresence, subscribeToUserStats } from '../firebase/db';
+import { subscribeToPresence, subscribeToUserStats, subscribeToPartner } from '../firebase/db';
+import { getPartnerEmail } from '../lib/constants';
 
 /**
  * Returns real-time partner stats.
  * @returns {{ isStudying, subject, studyMinutesToday, displayName, uid }}
  */
 export function usePartnerStats() {
-  const partner = useAuthStore(s => s.partner);
+  const user       = useAuthStore(s => s.user);
+  const partner    = useAuthStore(s => s.partner);
+  const setPartner = useAuthStore(s => s.setPartner);
+
   const [stats, setStats] = useState({
     isStudying:        false,
     subject:           '',
+    chapter:           null,
     studyMinutesToday: 0,
     displayName:       partner?.displayName || '',
-    uid:               partner?.uid || null,
+    uid:               partner?.uid || partner?.id || null,
     startedAt:         null,
     lastSeen:          null,
     chatLastReadAt:    null,
   });
 
-  // Use a ref to avoid stale closure issues
   const presenceRef = useRef(null);
   const statsRef    = useRef(null);
 
+  const partnerUid = partner?.uid || partner?.id;
+
+  // Auto-resolve partner if missing
   useEffect(() => {
-    if (!partner?.uid) return;
+    if (partnerUid || !user?.email) return;
+    const partnerEmail = getPartnerEmail(user.email);
+    if (!partnerEmail) return;
+
+    const unsub = subscribeToPartner(partnerEmail, (p) => {
+      if (p) setPartner(p);
+    });
+    return unsub;
+  }, [partnerUid, user?.email, setPartner]);
+
+  useEffect(() => {
+    if (!partnerUid) return;
 
     // 1️⃣ Presence (isStudying, subject, studyMinutesToday)
-    const unsubPresence = subscribeToPresence(partner.uid, (presence) => {
+    const unsubPresence = subscribeToPresence(partnerUid, (presence) => {
       presenceRef.current = presence;
       setStats(prev => ({
         ...prev,
@@ -42,20 +60,18 @@ export function usePartnerStats() {
         startedAt:         presence?.startedAt         || null,
         lastSeen:          presence?.lastSeen?.toDate?.() || null,
         studyMinutesToday: presence?.studyMinutesToday || 0,
-        displayName:       partner.displayName,
-        uid:               partner.uid,
+        displayName:       partner?.displayName || prev.displayName,
+        uid:               partnerUid,
       }));
     });
 
     // 2️⃣ User stats doc (more reliable study minutes, updated by Timer/Checkin)
-    const unsubUser = subscribeToUserStats(partner.uid, (userData) => {
+    const unsubUser = subscribeToUserStats(partnerUid, (userData) => {
       statsRef.current = userData;
-      // Prefer presence minutes if online, else fall back to user doc
       setStats(prev => ({
         ...prev,
-        displayName: userData?.displayName || partner.displayName,
+        displayName:    userData?.displayName || partner?.displayName || prev.displayName,
         chatLastReadAt: userData?.chatLastReadAt?.toDate?.() || null,
-        // Only override studyMinutes from user doc if presence isn't showing studying
         ...(presenceRef.current?.isStudying
           ? {}
           : { studyMinutesToday: userData?.studyMinutesToday || prev.studyMinutesToday }),
@@ -66,7 +82,7 @@ export function usePartnerStats() {
       unsubPresence();
       unsubUser();
     };
-  }, [partner?.uid]); // eslint-disable-line
+  }, [partnerUid, partner?.displayName]);
 
   return stats;
 }

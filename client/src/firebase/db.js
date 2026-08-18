@@ -28,20 +28,69 @@ const tsNow = ()          => Timestamp.now();
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export async function createOrUpdateUser(uid, data) {
-  await setDoc(ref('users', uid), { ...data, updatedAt: now() }, { merge: true });
+  const cleanData = {
+    ...data,
+    email: data.email ? data.email.toLowerCase().trim() : data.email,
+    uid: uid,
+    updatedAt: now(),
+  };
+  await setDoc(ref('users', uid), cleanData, { merge: true });
 }
 
 export async function getUserProfile(uid) {
   const snap = await getDoc(ref('users', uid));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  return snap.exists() ? { id: snap.id, uid: snap.id, ...snap.data() } : null;
 }
 
 export async function findUserByEmail(email) {
-  const q    = query(col('users'), where('email', '==', email), limit(1));
+  if (!email) return null;
+  const cleanEmail = email.toLowerCase().trim();
+  const q    = query(col('users'), where('email', '==', cleanEmail), limit(1));
   const snap = await getDocs(q);
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  return { id: d.id, uid: d.id, ...d.data() };
+  if (!snap.empty) {
+    const d = snap.docs[0];
+    return { id: d.id, uid: d.id, ...d.data() };
+  }
+  // Fallback scan: handles existing documents with uppercase/untrimmed email fields
+  try {
+    const allSnap = await getDocs(col('users'));
+    const match = allSnap.docs.find(d => {
+      const dEmail = d.data().email;
+      return dEmail && dEmail.toLowerCase().trim() === cleanEmail;
+    });
+    if (match) {
+      return { id: match.id, uid: match.id, ...match.data() };
+    }
+  } catch (err) {
+    console.warn('[findUserByEmail] fallback failed:', err);
+  }
+  return null;
+}
+
+/**
+ * Real-time listener for partner user doc.
+ * Updates partner profile and UID reactively without needing manual page reloads.
+ */
+export function subscribeToPartner(partnerEmail, callback) {
+  if (!partnerEmail) return () => {};
+  const cleanEmail = partnerEmail.toLowerCase().trim();
+  const q = query(col('users'), where('email', '==', cleanEmail), limit(1));
+  return onSnapshot(q, snap => {
+    if (!snap.empty) {
+      const d = snap.docs[0];
+      callback({ id: d.id, uid: d.id, ...d.data() });
+    } else {
+      // Fallback
+      findUserByEmail(cleanEmail).then(p => {
+        if (p) callback(p);
+      }).catch(() => {});
+    }
+  }, (err) => {
+    console.warn('[subscribeToPartner] onSnapshot error:', err);
+    findUserByEmail(cleanEmail).then(p => {
+      if (p) callback(p);
+    }).catch(() => {});
+  });
 }
 
 export async function saveWidgetLayout(uid, layout) {

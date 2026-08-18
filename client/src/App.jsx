@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store';
 import { onAuthChange } from './firebase/auth';
-import { findUserByEmail, createOrUpdateUser } from './firebase/db';
+import { findUserByEmail, createOrUpdateUser, subscribeToPartner } from './firebase/db';
 import { getPartnerEmail, getDisplayName } from './lib/constants';
 import { onForegroundMessage } from './firebase/messaging';
 import { usePresenceNotifications } from './hooks/usePresenceNotifications';
@@ -48,38 +48,50 @@ function AuthInitializer() {
   const { setUser, setPartner, setLoading } = useAuthStore();
 
   useEffect(() => {
+    let partnerUnsub = null;
+
     const unsub = onAuthChange(async (firebaseUser) => {
       if (!firebaseUser) {
         setUser(null);
+        if (partnerUnsub) partnerUnsub();
         return;
       }
       try {
-        // Ensure user doc exists in Firestore
-        const displayName = getDisplayName(firebaseUser.email);
+        const cleanEmail = (firebaseUser.email || '').toLowerCase().trim();
+        const displayName = getDisplayName(cleanEmail);
         await createOrUpdateUser(firebaseUser.uid, {
-          email:       firebaseUser.email,
+          email:       cleanEmail,
           displayName: displayName,
           uid:         firebaseUser.uid,
         });
-
-        // Load partner
-        const partnerEmail = getPartnerEmail(firebaseUser.email);
-        if (partnerEmail) {
-          const partner = await findUserByEmail(partnerEmail);
-          setPartner(partner);
-        }
 
         setUser({
           uid:         firebaseUser.uid,
-          email:       firebaseUser.email,
+          email:       cleanEmail,
           displayName: displayName,
         });
+
+        // Load and real-time listen to partner
+        const partnerEmail = getPartnerEmail(cleanEmail);
+        if (partnerEmail) {
+          if (partnerUnsub) partnerUnsub();
+          partnerUnsub = subscribeToPartner(partnerEmail, (partner) => {
+            if (partner) {
+              setPartner(partner);
+            }
+          });
+        }
       } catch (err) {
         console.error('[Auth] init error:', err);
-        setUser({ uid: firebaseUser.uid, email: firebaseUser.email, displayName: getDisplayName(firebaseUser.email) });
+        const cleanEmail = (firebaseUser.email || '').toLowerCase().trim();
+        setUser({ uid: firebaseUser.uid, email: cleanEmail, displayName: getDisplayName(cleanEmail) });
       }
     });
-    return unsub;
+
+    return () => {
+      unsub();
+      if (partnerUnsub) partnerUnsub();
+    };
   }, []);
 
   return null;

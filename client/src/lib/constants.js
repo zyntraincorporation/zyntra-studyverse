@@ -12,14 +12,18 @@ export const COUPLE_CONFIG = {
 };
 
 export function getPartnerEmail(myEmail) {
-  if (myEmail === COUPLE_CONFIG.saifulEmail)  return COUPLE_CONFIG.shahinurEmail;
-  if (myEmail === COUPLE_CONFIG.shahinurEmail) return COUPLE_CONFIG.saifulEmail;
+  if (!myEmail) return null;
+  const clean = myEmail.toLowerCase().trim();
+  if (clean === COUPLE_CONFIG.saifulEmail.toLowerCase())  return COUPLE_CONFIG.shahinurEmail;
+  if (clean === COUPLE_CONFIG.shahinurEmail.toLowerCase()) return COUPLE_CONFIG.saifulEmail;
   return null;
 }
 
 export function getDisplayName(email) {
-  if (email === COUPLE_CONFIG.saifulEmail)  return 'Saiful';
-  if (email === COUPLE_CONFIG.shahinurEmail) return 'Shahinur';
+  if (!email) return 'User';
+  const clean = email.toLowerCase().trim();
+  if (clean === COUPLE_CONFIG.saifulEmail.toLowerCase())  return 'Saiful';
+  if (clean === COUPLE_CONFIG.shahinurEmail.toLowerCase()) return 'Shahinur';
   return 'User';
 }
 
