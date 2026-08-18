@@ -1811,6 +1811,8 @@ export async function generateBuetDailyChallenge(uid, date, pcmChapters = []) {
     recentChallenges = snap.docs.map(d => d.data());
   } catch (err) {
     console.warn('[BUET Challenge] Could not fetch recent challenges:', err.message);
+  }
+
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error('VITE_OPENROUTER_API_KEY is not configured in environment variables');
