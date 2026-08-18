@@ -1047,6 +1047,45 @@ export function subscribeToChatRoom(callback) {
 }
 
 /**
+ * Syncs the current user's today vocabulary count to the shared chat room doc and presence doc.
+ * This guarantees instantaneous, real-time sync to the partner without permission/indexing barriers.
+ */
+export async function syncUserVocabCount(userId, count) {
+  if (!userId) return;
+  const today = getBSTDateString();
+  try {
+    await Promise.allSettled([
+      setDoc(ref('chat', chatRoomId), {
+        dailyVocab: {
+          [userId]: { count, date: today, updatedAt: now() }
+        }
+      }, { merge: true }),
+      setDoc(ref('presence', userId), {
+        vocabCountToday: count,
+        vocabDate: today,
+      }, { merge: true }),
+    ]);
+  } catch (err) {
+    console.warn('[syncUserVocabCount] sync error:', err);
+  }
+}
+
+/**
+ * Subscribes to the shared dailyVocab object inside the chat room document.
+ */
+export function subscribeToCoupleDailyVocab(callback) {
+  return onSnapshot(ref('chat', chatRoomId), snap => {
+    if (!snap.exists()) {
+      callback({});
+      return;
+    }
+    callback(snap.data().dailyVocab || {});
+  }, (err) => {
+    console.warn('[subscribeToCoupleDailyVocab] error:', err);
+  });
+}
+
+/**
  * Subscribes to the shared chat session state in real-time.
  * Returns everything needed to compute remaining time and session status.
  */
