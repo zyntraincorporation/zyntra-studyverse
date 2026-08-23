@@ -27,7 +27,7 @@ import {
   normalizeLegacyStatus,
 } from '../../lib/chapters-data';
 import { useTopicStore } from '../../store/useTopicStore';
-import { SYLLABUS } from '../../data/syllabus';
+import { SYLLABUS, BUET_SUBJECT_KEYS, HSC_SUBJECT_KEYS } from '../../data/syllabus';
 import {
   calculateSubjectProgress,
   calculateChapterProgress,
