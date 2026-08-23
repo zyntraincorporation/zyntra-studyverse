@@ -1,23 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../../../store';
-import { getChapters } from '../../../firebase/db';
+import { useTopicStore } from '../../../store/useTopicStore';
 import {
-  BUET_SUBJECTS,
-  SUBJECT_DISPLAY_NAMES,
+  SYLLABUS,
+  BUET_SUBJECT_KEYS,
   SUBJECT_SHORT_NAMES,
   SUBJECT_COLORS,
-  normalizeLegacyStatus,
-  STATUS_ORDER,
-} from '../../../lib/chapters-data';
-
-// Completion count: any status other than not_started / in_progress = "done"
-function countCompleted(chapters) {
-  return chapters.filter(ch => {
-    const s = normalizeLegacyStatus(ch.status);
-    return s !== 'not_started' && s !== 'in_progress';
-  }).length;
-}
+} from '../../../data/syllabus';
+import {
+  calculateSubjectProgress,
+  calculateChapterProgress,
+  calculateOverallProgress,
+} from '../../../lib/progressEngine';
 
 // Animated SVG ring
 function Ring({ pct, color, size = 56, stroke = 5 }) {
@@ -34,7 +29,7 @@ function Ring({ pct, color, size = 56, stroke = 5 }) {
         strokeLinecap="round"
         initial={{ strokeDashoffset: circ }}
         animate={{ strokeDashoffset: offset }}
-        transition={{ duration: 1.2, ease: 'easeOut' }}
+        transition={{ duration: 0.8, ease: 'easeOut' }}
       />
     </svg>
   );
@@ -42,37 +37,47 @@ function Ring({ pct, color, size = 56, stroke = 5 }) {
 
 export default function BuetProgressWidget() {
   const uid = useAuthStore(s => s.user?.uid);
-  const [chapters, setChapters] = useState([]);
-  const [loading,  setLoading]  = useState(true);
   const [expanded, setExpanded] = useState(null); // subject key
+  const topicMaps = useTopicStore(s => s.topicMaps);
 
-  const load = useCallback(() => {
-    if (!uid) return;
-    setLoading(true);
-    getChapters(uid).then(all => {
-      setChapters(all.filter(ch => BUET_SUBJECTS.includes(ch.subject)));
-      setLoading(false);
-    }).catch(err => {
-      console.error('[BuetProgressWidget] getChapters error:', err);
-      setLoading(false);
+  useEffect(() => {
+    if (uid && Object.keys(topicMaps).length === 0) {
+      useTopicStore.getState().loadAllUserTopics(uid);
+    }
+  }, [uid, topicMaps]);
+
+  // Live BUET subjects aggregation from central engine
+  const bySubject = BUET_SUBJECT_KEYS.map(subjKey => {
+    const subjData = SYLLABUS[subjKey];
+    const sp = calculateSubjectProgress(subjKey, topicMaps);
+    const colors = subjData?.color || SUBJECT_COLORS[subjKey];
+
+    const chapters = (subjData?.chapters || []).map(ch => {
+      const chDocId = uid ? `${uid}_${subjKey}_${ch.chapterNumber}` : ch.legacyDocId;
+      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.legacyDocId] || {});
+      return {
+        ...ch,
+        id: chDocId,
+        isDone: chProg.isCompleted,
+        progressPct: chProg.progressPct,
+      };
     });
-  }, [uid]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // ── Aggregate per subject ─────────────────────────────────────────────────
-  const bySubject = BUET_SUBJECTS.map(subj => {
-    const chs      = chapters.filter(ch => ch.subject === subj);
-    const done     = countCompleted(chs);
-    const total    = chs.length;
-    const pct      = total ? Math.round((done / total) * 100) : 0;
-    const colors   = SUBJECT_COLORS[subj];
-    return { subj, chs, done, total, pct, colors };
+    return {
+      subj: subjKey,
+      name: subjData?.name,
+      shortName: subjData?.shortName || SUBJECT_SHORT_NAMES[subjKey],
+      chs: chapters,
+      done: sp.completedChapters,
+      total: sp.totalChapters,
+      unitsDone: sp.completedUnits,
+      unitsTotal: sp.totalUnits,
+      pct: sp.progressPct,
+      colors,
+    };
   });
 
-  const totalDone  = bySubject.reduce((s, b) => s + b.done, 0);
-  const totalAll   = bySubject.reduce((s, b) => s + b.total, 0);
-  const overallPct = totalAll ? Math.round((totalDone / totalAll) * 100) : 0;
+  const overall = calculateOverallProgress(BUET_SUBJECT_KEYS, topicMaps);
 
   return (
     <div className="h-full flex flex-col bg-[#0c1220] rounded-2xl border border-white/[0.06] p-4 overflow-hidden">
@@ -83,8 +88,8 @@ export default function BuetProgressWidget() {
           <p className="text-[10px] text-slate-500 mt-0.5">Physics · Chemistry · Math</p>
         </div>
         <div className="text-right">
-          <p className="text-lg font-bold text-white">{overallPct}%</p>
-          <p className="text-[10px] text-slate-600">{totalDone}/{totalAll}</p>
+          <p className="text-lg font-bold text-white tabular-nums">{overall.progressPct}%</p>
+          <p className="text-[10px] text-slate-500">{overall.completedChapters}/{overall.totalChapters} অধ্যায়</p>
         </div>
       </div>
 
@@ -93,77 +98,62 @@ export default function BuetProgressWidget() {
         <motion.div
           className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-purple-500 to-yellow-400"
           initial={{ width: 0 }}
-          animate={{ width: `${overallPct}%` }}
-          transition={{ duration: 1.2, ease: 'easeOut' }}
+          animate={{ width: `${overall.progressPct}%` }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
         />
       </div>
 
       {/* Subject rings grid */}
-      {loading ? (
-        <div className="grid grid-cols-3 gap-2 flex-1">
-          {BUET_SUBJECTS.map(s => (
-            <div key={s} className="flex flex-col items-center gap-1.5 rounded-xl bg-white/5 animate-pulse p-3 h-20" />
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-2 flex-1">
-          {bySubject.map(({ subj, chs, done, total, pct, colors }) => (
-            <div key={subj}>
-              <button
-                onClick={() => setExpanded(expanded === subj ? null : subj)}
-                className={`w-full flex flex-col items-center gap-1.5 rounded-xl border p-2.5 transition-all
-                  bg-gradient-to-br ${colors.bg} ${colors.border}
-                  hover:brightness-110`}
-              >
-                <div className="relative">
-                  <Ring pct={pct} color={colors.hex} />
-                  <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white rotate-90 mt-[-2px]">
-                    {pct}%
-                  </span>
-                </div>
-                <span className={`text-[9px] font-medium bangla text-center leading-tight ${colors.text}`}>
-                  {SUBJECT_SHORT_NAMES[subj]}
+      <div className="grid grid-cols-3 gap-2 flex-1">
+        {bySubject.map(({ subj, shortName, chs, done, total, pct, colors }) => (
+          <div key={subj}>
+            <button
+              onClick={() => setExpanded(expanded === subj ? null : subj)}
+              className={`w-full flex flex-col items-center gap-1.5 rounded-xl border p-2.5 transition-all
+                bg-gradient-to-br ${colors.bg} ${colors.border}
+                hover:brightness-110`}
+            >
+              <div className="relative">
+                <Ring pct={pct} color={colors.hex} />
+                <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white rotate-90 mt-[-2px]">
+                  {pct}%
                 </span>
-                <span className="text-[8px] text-slate-600">{done}/{total}</span>
-              </button>
+              </div>
+              <span className={`text-[9px] font-medium bangla text-center leading-tight ${colors.text}`}>
+                {shortName}
+              </span>
+              <span className="text-[8px] text-slate-500">{done}/{total} অধ্যায়</span>
+            </button>
 
-              {/* Chapter list for this subject */}
-              <AnimatePresence>
-                {expanded === subj && chs.length > 0 && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden mt-1"
-                  >
-                    <div className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-2 space-y-1`}>
-                      {chs.map(ch => {
-                        const s = normalizeLegacyStatus(ch.status);
-                        const isDone = s !== 'not_started' && s !== 'in_progress';
-                        return (
-                          <div key={ch.id} className="flex items-center gap-1.5 text-[9px]">
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${isDone ? `bg-[${colors.hex}]` : 'bg-white/10'}`}
-                              style={{ backgroundColor: isDone ? colors.hex : undefined }} />
-                            <span className={`bangla truncate ${isDone ? 'text-white' : 'text-slate-600'}`}>
-                              {ch.chapterNumber}. {ch.chapterName}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {totalAll === 0 && !loading && (
-        <p className="text-xs text-slate-600 text-center mt-2 bangla">
-          অধ্যায় পাতায় যান এবং "সকল অধ্যায় লোড করুন" ক্লিক করুন
-        </p>
-      )}
+            {/* Chapter list drawer */}
+            <AnimatePresence>
+              {expanded === subj && chs.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden mt-1"
+                >
+                  <div className={`rounded-xl border ${colors.border} bg-gradient-to-br ${colors.bg} p-2 space-y-1`}>
+                    {chs.map(ch => (
+                      <div key={ch.id} className="flex items-center gap-1.5 text-[9px]">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: ch.isDone ? colors.hex : 'rgba(255,255,255,0.1)' }}
+                        />
+                        <span className={`bangla truncate ${ch.isDone ? 'text-white' : 'text-slate-500'}`}>
+                          {ch.chapterNumber}. {ch.chapterName}
+                        </span>
+                        <span className="text-[8px] text-white/30 ml-auto tabular-nums">{ch.progressPct}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

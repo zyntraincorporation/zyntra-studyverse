@@ -2,15 +2,21 @@ const { z } = require('zod');
 const wordsService = require('../../services/vocabulary/wordsService');
 
 const WordSchema = z.object({
-  word:           z.string().min(1).max(100),
-  banglaMeaning:  z.string().min(1),
-  pronunciation:  z.string().optional(),
-  synonyms:       z.array(z.string()).optional(),
-  antonyms:       z.array(z.string()).optional(),
-  antonymMeaning: z.string().optional(),
-  notes:          z.string().optional(),
-  difficulty:     z.number().int().min(1).max(5).optional(),
-  tags:           z.array(z.string()).optional(),
+  word:              z.string().min(1).max(100),
+  banglaMeaning:     z.string().optional(),
+  banglaDefinition:  z.string().optional(),
+  englishDefinition: z.string().optional(),
+  partOfSpeech:      z.string().optional(),
+  exampleSentence:   z.string().optional(),
+  pronunciation:     z.string().optional(),
+  synonyms:          z.array(z.string()).optional(),
+  antonyms:          z.array(z.string()).optional(),
+  antonymMeaning:    z.string().optional(),
+  notes:             z.string().optional(),
+  difficulty:        z.number().int().min(1).max(5).optional(),
+  tags:              z.array(z.string()).optional(),
+}).refine(data => data.banglaMeaning || data.banglaDefinition, {
+  message: 'Either banglaMeaning or banglaDefinition is required',
 });
 
 async function getWords(req, res) {

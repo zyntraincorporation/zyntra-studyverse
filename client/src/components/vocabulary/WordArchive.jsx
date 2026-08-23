@@ -106,78 +106,132 @@ export default function WordArchive() {
           <p className="text-slate-600 text-xs mt-1">Try adding words using Word Forge.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <AnimatePresence initial={false}>
-            {words.map((word, i) => (
-              <motion.div
-                key={word.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ delay: i * 0.03 }}
-                className="rounded-xl border border-white/10 bg-white/3 p-3"
-              >
-                <div className="flex items-start gap-3">
-                  {/* Left: word info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-white font-semibold text-sm">{word.word}</span>
+            {words.map((word, i) => {
+              const banglaMean = word.banglaMeaning || word.banglaDefinition || '';
+              const banglaDef = word.banglaDefinition && word.banglaDefinition !== banglaMean ? word.banglaDefinition : (word.banglaDefinition || '');
+              const englishDef = word.englishDefinition || word.englishMeaning || word.definition || '';
+              const example = word.exampleSentence || word.example || '';
+
+              return (
+                <motion.div
+                  key={word.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  className="rounded-2xl border border-white/10 bg-white/3 hover:border-white/20 p-4 space-y-3 transition-colors shadow-sm"
+                >
+                  {/* Top Header: Word + POS + Pronunciation + Actions */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-white font-bold text-base tracking-wide">{word.word}</span>
+                      {word.partOfSpeech && (
+                        <span className="text-[10px] font-semibold text-purple-300 bg-purple-500/15 border border-purple-500/30 rounded-md px-1.5 py-0.5">
+                          {word.partOfSpeech}
+                        </span>
+                      )}
                       {word.pronunciation && (
-                        <span className="text-slate-500 text-xs">/{word.pronunciation}/</span>
+                        <span className="text-slate-400 text-xs font-mono">/{word.pronunciation}/</span>
                       )}
                       <DifficultyDots level={word.difficulty} />
                     </div>
-                    <p className="text-purple-300 text-xs mt-0.5 truncate">{word.banglaMeaning}</p>
+
+                    {/* Right: mastery + actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 ${MASTERY_COLOR(word.masteryLevel)}`}>
+                        {Math.round(word.masteryLevel)}%
+                      </span>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setSelected(word)}
+                          title="Edit word"
+                          className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 text-xs flex items-center justify-center transition-colors"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => setDeleteId(word.id)}
+                          title="Delete word"
+                          className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs flex items-center justify-center transition-colors"
+                        >
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* English Definition */}
+                  {englishDef && (
+                    <div className="text-xs text-slate-300 leading-relaxed bg-white/3 border border-white/5 rounded-xl px-3 py-2">
+                      <span className="text-[10px] text-cyan-400 font-semibold block uppercase tracking-wider mb-0.5">English Definition</span>
+                      <p>{englishDef}</p>
+                    </div>
+                  )}
+
+                  {/* Bangla Meaning & Bangla Definition Box */}
+                  {(banglaMean || banglaDef) && (
+                    <div className="bg-gradient-to-br from-emerald-950/20 to-teal-950/20 border border-emerald-500/20 rounded-xl px-3 py-2.5 space-y-1.5">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">বাংলা অর্থ:</span>
+                        <span className="text-emerald-200 text-sm font-semibold">{banglaMean}</span>
+                      </div>
+                      {banglaDef && (
+                        <div className="pt-1 border-t border-emerald-500/15">
+                          <span className="text-[10px] text-teal-400/80 font-medium block mb-0.5">বাংলা ব্যাখ্যা / Definition:</span>
+                          <p className="text-slate-200 text-xs leading-relaxed">{banglaDef}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Example Sentence */}
+                  {example && (
+                    <p className="text-slate-400 text-xs italic border-l-2 border-cyan-500/40 pl-2.5 leading-relaxed">
+                      "{example}"
+                    </p>
+                  )}
+
+                  {/* Synonyms & Antonyms */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                     {word.synonyms?.length > 0 && (
-                      <p className="text-slate-600 text-xs mt-0.5 truncate">
-                        syn: {word.synonyms.slice(0, 3).join(', ')}
+                      <p className="text-slate-400">
+                        <span className="text-cyan-400 font-medium">Synonyms: </span>
+                        {word.synonyms.join(', ')}
+                      </p>
+                    )}
+                    {word.antonyms?.length > 0 && (
+                      <p className="text-slate-400">
+                        <span className="text-red-400 font-medium">Antonyms: </span>
+                        {word.antonyms.join(', ')}
+                        {word.antonymMeaning && <span className="text-slate-500 ml-1">({word.antonymMeaning})</span>}
                       </p>
                     )}
                   </div>
 
-                  {/* Right: mastery + actions */}
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className={`text-xs font-semibold ${MASTERY_COLOR(word.masteryLevel)}`}>
-                      {Math.round(word.masteryLevel)}%
-                    </span>
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => setSelected(word)}
-                        className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs hover:text-cyan-400 transition-colors"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => setDeleteId(word.id)}
-                        className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs hover:text-red-400 transition-colors"
-                      >
-                        🗑
-                      </button>
-                    </div>
+                  {/* Mastery Bar */}
+                  <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${MASTERY_BAR(word.masteryLevel)}`}
+                      style={{ width: `${word.masteryLevel}%` }}
+                    />
                   </div>
-                </div>
 
-                {/* Mastery Bar */}
-                <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${MASTERY_BAR(word.masteryLevel)}`}
-                    style={{ width: `${word.masteryLevel}%` }}
-                  />
-                </div>
-
-                {/* Stats row */}
-                <div className="flex gap-4 mt-1.5 text-[10px] text-slate-600">
-                  <span>✓ {word.correctCount}</span>
-                  <span>✗ {word.failCount}</span>
-                  <span>🔄 {word.totalReviews} reviews</span>
-                  {word.nextReviewAt && (
-                    <span className="ml-auto text-slate-500">
-                      Next: {formatDate(word.nextReviewAt)}
-                    </span>
-                  )}
-                </div>
-              </motion.div>
-            ))}
+                  {/* Stats row */}
+                  <div className="flex gap-4 text-[10px] text-slate-500 pt-0.5">
+                    <span>✓ {word.correctCount || 0}</span>
+                    <span>✗ {word.failCount || 0}</span>
+                    <span>🔄 {word.totalReviews || 0} reviews</span>
+                    {word.nextReviewAt && (
+                      <span className="ml-auto text-slate-400">
+                        Next: {formatDate(word.nextReviewAt)}
+                      </span>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       )}

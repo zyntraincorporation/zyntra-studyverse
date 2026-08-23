@@ -1,25 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, BarChart2, MessageSquare, History, RefreshCw, Zap, AlertTriangle } from 'lucide-react';
+import { Bot, BarChart2, MessageSquare, History, Brain, RefreshCw, Zap, AlertTriangle } from 'lucide-react';
 import { useAuthStore } from '../store';
 import { getBSTDateString } from '../lib/bst';
 import {
   buildMentorContext, getCachedAnalysis, generateAnalysis,
   getChatUsage, getChatHistory, getChatHistoryDates,
 } from '../lib/mentorApi';
-import { MentorAnalysisCard } from '../components/ai/MentorAnalysisCard';
-import { MentorChat }         from '../components/ai/MentorChat';
+import { subscribeToMentorMemories } from '../firebase/db';
+import { MentorAnalysisCard }  from '../components/ai/MentorAnalysisCard';
+import { MentorChat }          from '../components/ai/MentorChat';
+import { MentorMemoryManager } from '../components/ai/MentorMemoryManager';
 import { ChatHistoryPanel, HistoryChatView } from '../components/ai/ChatHistoryPanel';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AIMentorPage — Personal AI Mentor for BUET preparation
-// Three tabs: Analysis | Chat | History
+// Tabs: Analysis | Chat | Memory | History
+// Memory tab lets user add/edit/delete/toggle custom context injected into AI.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'analysis', label: 'Analysis',  Icon: BarChart2     },
-  { id: 'chat',     label: 'Chat',      Icon: MessageSquare },
-  { id: 'history',  label: 'History',   Icon: History       },
+  { id: 'analysis', label: 'Analysis',   Icon: BarChart2     },
+  { id: 'chat',     label: 'Chat',       Icon: MessageSquare },
+  { id: 'memory',   label: 'Memory',     Icon: Brain         },
+  { id: 'history',  label: 'History',    Icon: History       },
 ];
 
 // ── Subject Progress Mini Bar ─────────────────────────────────────────────────
@@ -114,6 +118,17 @@ export default function AIMentorPage() {
   const [historyMsgLoad,  setHistoryMsgLoad]  = useState(false);
   const [pageError,       setPageError]       = useState('');
   const [todayMessages,   setTodayMessages]   = useState([]);
+
+  // ── Memories — real-time from Firestore ──────────────────────────────────
+  const [memories, setMemories] = useState([]);
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeToMentorMemories(uid, setMemories, console.error);
+    return () => unsub();
+  }, [uid]);
+
+  // Only active memories for AI context injection
+  const activeMemories = memories.filter(m => m.active !== false);
 
   const today = getBSTDateString();
 
@@ -233,7 +248,17 @@ export default function AIMentorPage() {
                 <Bot size={18} className="text-cyan-400" />
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white leading-none">AI Mentor</h1>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-lg font-bold text-white leading-none">AI Mentor</h1>
+                  {/* Memory badge */}
+                  {activeMemories.length > 0 && (
+                    <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full
+                                     bg-violet-500/15 border border-violet-500/25 text-violet-400 font-medium">
+                      <Brain size={9} />
+                      {activeMemories.length} memor{activeMemories.length === 1 ? 'y' : 'ies'}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-500 mt-0.5">BUET preparation · Personal guide</p>
               </div>
             </div>
@@ -277,13 +302,23 @@ export default function AIMentorPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1.5 px-4 py-3.5 text-sm font-medium border-b-2 transition-all
+              className={`relative flex items-center gap-1.5 px-4 py-3.5 text-sm font-medium border-b-2 transition-all
                 ${activeTab === tab.id
                   ? 'border-cyan-400 text-cyan-300'
                   : 'border-transparent text-slate-500 hover:text-slate-300'}`}
             >
               <tab.Icon size={14} />
               {tab.label}
+              {/* Memory tab — active count badge */}
+              {tab.id === 'memory' && memories.length > 0 && (
+                <span className={`ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold
+                                  flex items-center justify-center
+                                  ${activeMemories.length > 0
+                                    ? 'bg-violet-500/30 text-violet-300'
+                                    : 'bg-white/10 text-slate-500'}`}>
+                  {memories.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -316,6 +351,17 @@ export default function AIMentorPage() {
                 fullContext={context}
                 todayAnalysisText={analysis?.text || null}
                 initialMessages={todayMessages}
+                activeMemories={activeMemories}
+              />
+            </div>
+          )}
+
+          {/* ── MEMORY TAB ────────────────────────────────────────────────── */}
+          {activeTab === 'memory' && (
+            <div className="h-full overflow-y-auto">
+              <MentorMemoryManager
+                userId={uid}
+                memories={memories}
               />
             </div>
           )}

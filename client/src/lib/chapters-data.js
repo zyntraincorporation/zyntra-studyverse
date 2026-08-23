@@ -1187,6 +1187,38 @@ export const TOPIC_DATA = {
     T('t04','ডেটা এনক্রিপশন'),
     ...PMS,
   ],
+
+  // ── বাংলা ১ম পত্র — CQ / MCQ / মক টেস্ট (ডিফল্ট ট্র্যাকিং ইউনিট) ──────────
+  'Bangla1_1':  [...PMS], 'Bangla1_2':  [...PMS], 'Bangla1_3':  [...PMS],
+  'Bangla1_4':  [...PMS], 'Bangla1_5':  [...PMS], 'Bangla1_6':  [...PMS],
+  'Bangla1_7':  [...PMS], 'Bangla1_8':  [...PMS], 'Bangla1_9':  [...PMS],
+  'Bangla1_10': [...PMS], 'Bangla1_11': [...PMS], 'Bangla1_12': [...PMS],
+  'Bangla1_13': [...PMS], 'Bangla1_14': [...PMS], 'Bangla1_15': [...PMS],
+  'Bangla1_16': [...PMS], 'Bangla1_17': [...PMS], 'Bangla1_18': [...PMS],
+  'Bangla1_19': [...PMS], 'Bangla1_20': [...PMS], 'Bangla1_21': [...PMS],
+  'Bangla1_22': [...PMS], 'Bangla1_23': [...PMS], 'Bangla1_24': [...PMS],
+  'Bangla1_25': [...PMS], 'Bangla1_26': [...PMS], 'Bangla1_27': [...PMS],
+  'Bangla1_28': [...PMS],
+
+  // ── বাংলা ২য় পত্র ──────────────────────────────────────────────────────────
+  'Bangla2_1':  [...PMS], 'Bangla2_2':  [...PMS], 'Bangla2_3':  [...PMS],
+  'Bangla2_4':  [...PMS], 'Bangla2_5':  [...PMS], 'Bangla2_6':  [...PMS],
+  'Bangla2_7':  [...PMS], 'Bangla2_8':  [...PMS], 'Bangla2_9':  [...PMS],
+  'Bangla2_10': [...PMS], 'Bangla2_11': [...PMS], 'Bangla2_12': [...PMS],
+
+  // ── English 1st Paper ─────────────────────────────────────────────────────
+  'English1_1':  [...PMS], 'English1_2':  [...PMS], 'English1_3':  [...PMS],
+  'English1_4':  [...PMS], 'English1_5':  [...PMS], 'English1_6':  [...PMS],
+  'English1_7':  [...PMS], 'English1_8':  [...PMS], 'English1_9':  [...PMS],
+  'English1_10': [...PMS], 'English1_11': [...PMS], 'English1_12': [...PMS],
+  'English1_13': [...PMS],
+
+  // ── English 2nd Paper ─────────────────────────────────────────────────────
+  'English2_1':  [...PMS], 'English2_2':  [...PMS], 'English2_3':  [...PMS],
+  'English2_4':  [...PMS], 'English2_5':  [...PMS], 'English2_6':  [...PMS],
+  'English2_7':  [...PMS], 'English2_8':  [...PMS], 'English2_9':  [...PMS],
+  'English2_10': [...PMS], 'English2_11': [...PMS], 'English2_12': [...PMS],
+  'English2_13': [...PMS],
 };
 
 // ── Topic Helper Functions ────────────────────────────────────────────────────

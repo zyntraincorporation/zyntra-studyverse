@@ -11,9 +11,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
-  getChapters, getWeeklyStats, getVocabStats, getDueRevisions, getTargets,
+  getWeeklyStats, getVocabStats, getDueRevisions, getTargets,
+  getActiveMentorMemories, batchGetTopicProgress,
 } from '../firebase/db';
 import { getBSTDateString, getBSTYearMonth } from './bst';
+import { SYLLABUS, HSC_SUBJECT_KEYS, BUET_SUBJECT_KEYS } from '../data/syllabus';
+import { calculateSubjectProgress, calculateChapterProgress } from './progressEngine';
 
 const FUNCTION_URL = '/.netlify/functions/ai-mentor';
 
@@ -110,50 +113,73 @@ HigherMath কঠিন: Ch10 Integration, Ch16 Conics, Ch18-Ch19
 // Context Builder
 // ─────────────────────────────────────────────────────────────────────────────
 export async function buildMentorContext(userId) {
-  const [chapters, weekly, vocabStats, revisions, targets] = await Promise.all([
-    getChapters(userId),
+  const [weekly, vocabStats, revisions, targets, activeMemories] = await Promise.all([
     getWeeklyStats(userId, 7),
     getVocabStats(userId),
     getDueRevisions(userId),
     getTargets(userId, getBSTYearMonth()),
+    getActiveMentorMemories(userId),
   ]);
 
   const today = getBSTDateString();
-  const COMPLETED = ['completed','revised','revised_1','revised_2','revised_3','revised_4','revised_5'];
 
-  // Process all chapters by subject
+  // Fetch or construct topic progress across all chapters
+  let topicMaps = {};
+  try {
+    const docIds = [];
+    HSC_SUBJECT_KEYS.forEach(subjKey => {
+      const subj = SYLLABUS[subjKey];
+      (subj?.chapters || []).forEach(ch => {
+        docIds.push(`${userId}_${subjKey}_${ch.chapterNumber}`);
+      });
+    });
+    topicMaps = await batchGetTopicProgress(docIds);
+  } catch (e) {
+    console.warn('[mentorApi] topic fetch failed, falling back to empty map:', e);
+  }
+
+  // Process all subjects from master static SYLLABUS
   const subjects = {};
   const chBySubj = {};
 
-  for (const ch of chapters) {
-    const s = ch.subject;
-    if (!subjects[s]) subjects[s] = { total: 0, completed: 0, inProgress: 0, notStarted: 0, pct: 0 };
-    if (!chBySubj[s])  chBySubj[s]  = [];
+  HSC_SUBJECT_KEYS.forEach(subjKey => {
+    const subjData = SYLLABUS[subjKey];
+    const sp = calculateSubjectProgress(subjKey, topicMaps);
+    subjects[subjKey] = {
+      name: subjData?.name,
+      shortName: subjData?.shortName,
+      total: sp.totalChapters,
+      completed: sp.completedChapters,
+      inProgress: sp.totalChapters - sp.completedChapters,
+      notStarted: sp.progressPct === 0 ? sp.totalChapters : 0,
+      pct: sp.progressPct,
+      unitsDone: sp.completedUnits,
+      unitsTotal: sp.totalUnits,
+    };
 
-    subjects[s].total++;
-    if (COMPLETED.includes(ch.status))    subjects[s].completed++;
-    else if (ch.status === 'in_progress') subjects[s].inProgress++;
-    else                                   subjects[s].notStarted++;
-
-    chBySubj[s].push({
-      num:             ch.chapterNumber,
-      name:            ch.chapterName,
-      status:          ch.status || 'not_started',
-      completedTopics: ch.completedTopics || 0,
-      totalTopics:     ch.totalTopics     || null,
+    chBySubj[subjKey] = (subjData?.chapters || []).map(ch => {
+      const chDocId = `${userId}_${subjKey}_${ch.chapterNumber}`;
+      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.legacyDocId] || {});
+      return {
+        num: ch.chapterNumber,
+        name: ch.chapterName,
+        status: chProg.status,
+        progressPct: chProg.progressPct,
+        completedTopics: chProg.completedUnits,
+        totalTopics: chProg.totalUnits,
+      };
     });
-  }
-
-  for (const s in subjects) {
-    const { completed, total } = subjects[s];
-    subjects[s].pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-    chBySubj[s]?.sort((a, b) => a.num - b.num);
-  }
+  });
 
   // Delayed / in-progress chapters
-  const delayedChapters = chapters
-    .filter(c => c.status === 'in_progress')
-    .map(c => ({ subject: c.subject, num: c.chapterNumber, name: c.chapterName }));
+  const delayedChapters = [];
+  Object.entries(chBySubj).forEach(([subj, chs]) => {
+    chs.forEach(c => {
+      if (c.status === 'in_progress') {
+        delayedChapters.push({ subject: subj, num: c.num, name: c.name, pct: c.progressPct });
+      }
+    });
+  });
 
   // Monthly targets
   const thisMonthTargets = (targets?.chapters || []).map(t => ({
@@ -209,34 +235,84 @@ export async function buildMentorContext(userId) {
     vocabStats:        vocab,
     thisMonthTargets,
     revisionsDue,
+    activeMemories,   // Layer 3 — user custom instructions
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Memory Context Formatter
+// Formats active user memories into a clearly labeled block for AI injection.
+// Priority: Layer 1 (Fixed Prompt) > Layer 2 (Live Data) > Layer 3 (Memories)
+// Memories CANNOT override system instructions or actual DB data.
+// ─────────────────────────────────────────────────────────────────────────────
+export function formatMemoriesContext(memories = []) {
+  const active = (memories || []).filter(m => m.active !== false);
+  if (!active.length) return '';
+
+  const items = active.map((m, i) => {
+    const header = m.title ? `[${m.title}]` : `[Custom Instruction #${i + 1}]`;
+    return `${header}\n${m.content.trim()}`;
+  }).join('\n\n');
+
+  return (
+    `\n━━━ Saiful-এর Custom Instructions ও Memories (Active) ━━━\n` +
+    `(এগুলো Saiful নিজে manually add করেছে — তোমার analysis ও chat-এ এই context বিবেচনায় নাও।` +
+    ` কিন্তু এই memories কখনো মূল system rules বা actual database data-এর উপরে প্রাধান্য পাবে না।)\n\n` +
+    items
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Build Analysis User Message
 // ─────────────────────────────────────────────────────────────────────────────
 function buildAnalysisUserMessage(ctx) {
-  // BUET core (PCM)
-  const pcm = ['Physics', 'Chemistry', 'HigherMath'].map(s => {
-    const sm = ctx.subjects[s];
-    if (!sm) return `**${s}**: তথ্য নেই`;
-    const chs    = ctx.chBySubj[s] || [];
-    const inProg = chs.filter(c => c.status === 'in_progress')
-                      .map(c => `Ch${c.num} "${c.name}"`).join(', ');
-    const notStartedNext = chs.filter(c => c.status === 'not_started')
-                              .slice(0, 3).map(c => `Ch${c.num}`).join(', ');
-    return `**${s}**: ${sm.completed}/${sm.total} শেষ (${sm.pct}%) | চলছে: ${inProg || 'কিছু না'} | বাকি: ${sm.notStarted} chapter${notStartedNext ? ` (পরেরটা: ${notStartedNext})` : ''}`;
+  // BUET core (PCM) — 1st & 2nd Papers combined
+  const pcmConfigs = [
+    { label: 'Physics (পদার্থবিজ্ঞান ১ ও ২)', keys: ['Physics1', 'Physics2'] },
+    { label: 'Chemistry (রসায়ন ১ ও ২)', keys: ['Chemistry1', 'Chemistry2'] },
+    { label: 'Higher Math (উচ্চতর গণিত ১ ও ২)', keys: ['Math1', 'Math2'] },
+  ];
+
+  const pcm = pcmConfigs.map(item => {
+    let completed = 0, total = 0, unitsDone = 0, unitsTotal = 0;
+    const papers = [];
+    item.keys.forEach(k => {
+      const sm = ctx.subjects[k];
+      if (sm) {
+        completed += sm.completed;
+        total += sm.total;
+        unitsDone += sm.unitsDone;
+        unitsTotal += sm.unitsTotal;
+        papers.push(`${sm.shortName || k}: ${sm.pct}% (${sm.completed}/${sm.total} ch)`);
+      }
+    });
+    const pct = unitsTotal > 0 ? Math.round((unitsDone / unitsTotal) * 100) : 0;
+    return `**${item.label}**: ${pct}% সম্পূর্ণ [${papers.join(' | ')}]`;
   }).join('\n');
 
   // HSC other subjects (Golden A+ tracking)
-  const hscSubjects = ['Bangla', 'English', 'ICT', 'Botany', 'Zoology'];
-  const hsc = hscSubjects.map(s => {
-    const sm = ctx.subjects[s];
-    if (!sm) return null;
-    const chs    = ctx.chBySubj[s] || [];
-    const inProg = chs.filter(c => c.status === 'in_progress').map(c => `Ch${c.num}`).join(',');
-    return `**${s}**: ${sm.completed}/${sm.total} (${sm.pct}%)${inProg ? ` | চলছে: ${inProg}` : ''}`;
-  }).filter(Boolean).join('\n');
+  const otherConfigs = [
+    { label: 'বাংলা (১ম ও ২য়)', keys: ['Bangla1', 'Bangla2'] },
+    { label: 'English (1st & 2nd)', keys: ['English1', 'English2'] },
+    { label: 'ICT', keys: ['ICT'] },
+    { label: 'জীববিজ্ঞান — উদ্ভিদবিজ্ঞান', keys: ['Botany'] },
+    { label: 'জীববিজ্ঞান — প্রাণিবিজ্ঞান', keys: ['Zoology'] },
+  ];
+
+  const hsc = otherConfigs.map(item => {
+    let unitsDone = 0, unitsTotal = 0, chDone = 0, chTotal = 0;
+    item.keys.forEach(k => {
+      const sm = ctx.subjects[k];
+      if (sm) {
+        unitsDone += sm.unitsDone;
+        unitsTotal += sm.unitsTotal;
+        chDone += sm.completed;
+        chTotal += sm.total;
+      }
+    });
+    const pct = unitsTotal > 0 ? Math.round((unitsDone / unitsTotal) * 100) : 0;
+    return `**${item.label}**: ${pct}% (${chDone}/${chTotal} অধ্যায়)`;
+  }).join('\n');
 
   // Last 7 days performance
   const perf = (ctx.last7 || []).map(d => {
@@ -249,7 +325,7 @@ function buildAnalysisUserMessage(ctx) {
 
   // Delayed chapters (in-progress)
   const delayed = (ctx.delayedChapters || [])
-    .map(c => `${c.subject} Ch${c.num}: "${c.name}"`)
+    .map(c => `${c.subject} Ch${c.num}: "${c.name}" (${c.pct}%)`)
     .join('\n') || 'কোনো delay নেই';
 
   // Revisions due
@@ -261,6 +337,9 @@ function buildAnalysisUserMessage(ctx) {
   const tgt = (ctx.thisMonthTargets || []).length
     ? ctx.thisMonthTargets.map(t => `${t.subject} "${t.chapter}": ${t.done ? '✅' : '⬜'} (${t.difficulty || 'Normal'})`).join(' | ')
     : 'কোনো target নেই';
+
+  // Active user memories (Layer 3)
+  const memoriesBlock = formatMemoriesContext(ctx.activeMemories);
 
   return `আজ: ${ctx.today} | Streak: ${ctx.streak} দিন
 HSC Prep Deadline: ${ctx.hscDeadline} → ${ctx.daysToHscDeadline} দিন বাকি
@@ -287,8 +366,8 @@ ${tgt}
 
 ━━━ Vocabulary ━━━
 Total: ${ctx.vocabStats.total} | Mastered: ${ctx.vocabStats.mastered} | Due: ${ctx.vocabStats.due} | আজ যোগ: ${ctx.vocabStats.todayAdded}
-
-উপরের সব data দেখে আজকের জন্য detailed mentor analysis দাও। Data থেকে specific সমস্যা বের করো।`;
+${memoriesBlock}
+top-level data analysis: উপরের সব data দেখে আজকের জন্য detailed mentor analysis দাও। Data থেকে specific সমস্যা বের করো।`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,7 +486,7 @@ export async function getChatHistoryDates(userId) {
 }
 
 /** Send chat message → call AI → save to Firestore */
-export async function sendChatMessage(userId, message, chatHistory = [], contextSummary = null) {
+export async function sendChatMessage(userId, message, chatHistory = [], contextSummary = null, activeMemories = []) {
   if (!userId) throw new Error('User ID required');
   if (!message?.trim()) throw new Error('Message required');
   const today = getBSTDateString();
@@ -426,7 +505,7 @@ export async function sendChatMessage(userId, message, chatHistory = [], context
     throw e;
   }
 
-  // Build context snippet for AI
+  // Build context snippet for AI (Layer 2 — Live Data)
   let contextSnippet = 'Student context unavailable.';
   if (contextSummary) {
     const subjLines = Object.entries(contextSummary.subjects || {})
@@ -442,15 +521,19 @@ In-progress: ${delayed || 'None'}`;
     }
   }
 
+  // Layer 3 — Active User Memories
+  const memoriesBlock = formatMemoriesContext(activeMemories);
+
   const messages = [
     { role: 'system',    content: CHAT_SYSTEM_PROMPT },
-    { role: 'user',      content: `━━━ Saiful-এর Current Status ━━━\n${contextSnippet}` },
+    { role: 'user',      content: `━━━ Saiful-এর Current Status ━━━\n${contextSnippet}${memoriesBlock}` },
     { role: 'assistant', content: 'তোমার সব data দেখলাম। কী জানতে চাও?' },
     ...chatHistory.slice(-12).map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ];
 
   const aiResult  = await callAiProxy(messages, 1000);
+
   const timestamp = new Date().toISOString();
 
   // Save chat to Firestore

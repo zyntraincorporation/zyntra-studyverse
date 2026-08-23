@@ -561,22 +561,56 @@ export async function getVocabularyWords(userId, { search, sort, filter, pageSiz
 
   if (search) {
     const s = search.toLowerCase();
-    docs = docs.filter(w => w.word.toLowerCase().includes(s) || w.banglaMeaning.toLowerCase().includes(s));
+    docs = docs.filter(w =>
+      (w.word || '').toLowerCase().includes(s) ||
+      (w.banglaDefinition || '').toLowerCase().includes(s) ||
+      (w.banglaMeaning || '').toLowerCase().includes(s) ||
+      (w.englishDefinition || w.englishMeaning || '').toLowerCase().includes(s)
+    );
   }
   return { words: docs, lastDoc: snap.docs[snap.docs.length - 1] || null, hasMore: snap.docs.length === pageSize };
 }
 
 export async function createVocabWord(userId, data) {
+  const banglaDef = data.banglaDefinition || data.banglaMeaning || '';
+  const banglaMean = data.banglaMeaning || data.banglaDefinition || '';
+  const englishDef = data.englishDefinition || data.englishMeaning || '';
+
   const docRef = await addDoc(vocabWordsCol(userId), {
-    ...data, userId, isArchived: false, masteryLevel: 0, totalReviews: 0,
-    correctCount: 0, failCount: 0, correctStreak: 0, reviewInterval: 1,
-    nextReviewAt: tsNow(), createdAt: now(), updatedAt: now(),
+    ...data,
+    banglaDefinition: banglaDef,
+    banglaMeaning: banglaMean,
+    englishDefinition: englishDef,
+    englishMeaning: englishDef,
+    userId,
+    isArchived: false,
+    masteryLevel: 0,
+    totalReviews: 0,
+    correctCount: 0,
+    failCount: 0,
+    correctStreak: 0,
+    reviewInterval: 1,
+    nextReviewAt: tsNow(),
+    createdAt: now(),
+    updatedAt: now(),
   });
   return docRef.id;
 }
 
 export async function updateVocabWord(userId, wordId, data) {
-  await updateDoc(doc(db, 'vocabulary', userId, 'words', wordId), { ...data, updatedAt: now() });
+  const updatePayload = { ...data, updatedAt: now() };
+  if (data.banglaDefinition !== undefined || data.banglaMeaning !== undefined) {
+    const banglaDef = data.banglaDefinition || data.banglaMeaning || '';
+    const banglaMean = data.banglaMeaning || data.banglaDefinition || '';
+    updatePayload.banglaDefinition = banglaDef;
+    updatePayload.banglaMeaning = banglaMean;
+  }
+  if (data.englishDefinition !== undefined || data.englishMeaning !== undefined) {
+    const englishDef = data.englishDefinition || data.englishMeaning || '';
+    updatePayload.englishDefinition = englishDef;
+    updatePayload.englishMeaning = englishDef;
+  }
+  await updateDoc(doc(db, 'vocabulary', userId, 'words', wordId), updatePayload);
 }
 
 export async function deleteVocabWord(userId, wordId) {
@@ -1508,7 +1542,7 @@ export async function deleteScheduleEntry(userId, entryId) {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export async function generateAndSaveAIReport(userId, days = 7, topicSummary = null) {
+export async function generateAndSaveAIReport(userId, days = 7, topicSummary = null, memoriesContext = '') {
   const [stats, chapters] = await Promise.all([
     getWeeklyStats(userId, days),
     getChapters(userId),
@@ -1535,13 +1569,16 @@ export async function generateAndSaveAIReport(userId, days = 7, topicSummary = n
   const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
-  const userMessage = `সাইফুলের গত ${days} দিনের data:\n` +
+  // Layer 2 (Live Data) + Layer 3 (Active Memories) combined in user message
+  const userMessage =
+    `সাইফুলের গত ${days} দিনের data:\n` +
     `Scheduled sessions: ${stats.summary.totalCompleted}/${stats.summary.totalScheduled}\n` +
     `Extra study: ${stats.summary.totalExtraMin} min | Streak: ${stats.streak}d\n` +
     `Subject stats: ${JSON.stringify(stats.subjectDistribution)}\n` +
     `Chapter progress: ${JSON.stringify(chapterSummary)}` +
     topicProgressStr + '\n' +
-    `Daily log: ${JSON.stringify(stats.byDay.map(d => ({ date: d.date, completed: d.completedSessions, missed: d.missedSessions, extra: d.extraStudyMinutes })))}`;
+    `Daily log: ${JSON.stringify(stats.byDay.map(d => ({ date: d.date, completed: d.completedSessions, missed: d.missedSessions, extra: d.extraStudyMinutes })))}` +
+    (memoriesContext ? `\n\n${memoriesContext}` : '');
 
   const res = await fetch(OPENROUTER_URL, {
     method: 'POST',
@@ -1636,19 +1673,36 @@ export async function getTopicProgress(chapterDocId) {
  */
 export async function updateTopicStatus(chapterDocId, slug, update) {
   const ref = topicRef(chapterDocId, slug);
-  const payload = { updatedAt: now() };
+  const snap = await getDoc(ref);
+  const existing = snap.exists() ? snap.data() : {};
+  const existingRevisions = existing.revisions || {};
+
+  const payload = {
+    ...existing,
+    slug: existing.slug || slug,
+    updatedAt: now(),
+  };
 
   if (typeof update.studied === 'boolean') {
-    payload.studied    = update.studied;
-    payload.studiedAt  = update.studied ? now() : null;
+    payload.studied   = update.studied;
+    payload.studiedAt = update.studied ? (existing.studiedAt || now()) : null;
+    if (!update.studied) {
+      payload.revisions = {};
+    }
   }
 
   if (update.revisionLevel != null) {
     const key = String(update.revisionLevel);
-    payload[`revisions.${key}`] = update.revisionDone ? now() : null;
+    const updatedRevs = { ...existingRevisions };
+    if (update.revisionDone) {
+      updatedRevs[key] = now();
+    } else {
+      delete updatedRevs[key];
+    }
+    payload.revisions = updatedRevs;
   }
 
-  await setDoc(ref, payload, { merge: true });
+  await setDoc(ref, payload);
 }
 
 /**
@@ -1734,18 +1788,16 @@ export async function batchGetTopicProgress(chapterDocIds) {
 }
 
 /**
- * Auto-schedule a chapter for revision when the first topic is marked studied.
- * Sets chapter status to 'completed' if it was 'not_started' or 'in_progress',
- * making it eligible for getDueRevisions / RevisionPage.
+ * scheduleRevisionIfNeeded — checks whether chapter is complete and updates revision queue status if appropriate.
+ * Avoids false auto-completion on 1st topic toggle.
  *
  * @param {string} chapterDocId  - the chapter Firestore document ID
- * @param {object} chapterMeta   - { userId, subject, chapterNumber, status }
+ * @param {object} chapterMeta   - { userId, subject, chapterNumber, status, isFullyCompleted }
  */
 export async function scheduleRevisionIfNeeded(chapterDocId, chapterMeta) {
   if (!chapterDocId || !chapterMeta?.userId) return;
-  const { status } = chapterMeta;
-  // Only promote if chapter has not been manually marked as completed/revised yet
-  if (!status || status === 'not_started' || status === 'in_progress') {
+  // If chapter is explicitly fully completed, we can mark it in chapters doc for RevisionPage compatibility
+  if (chapterMeta.isFullyCompleted && (!chapterMeta.status || chapterMeta.status === 'not_started' || chapterMeta.status === 'in_progress')) {
     try {
       await setDoc(
         doc(db, 'chapters', chapterDocId),
@@ -2229,3 +2281,76 @@ export async function getBuetChallengeStats(uid) {
   }
 }
 
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AI MENTOR MEMORIES / CUSTOM INSTRUCTIONS
+// Path: users/{uid}/aiMentorMemories/{memoryId}
+// Schema: { title, content, active, createdAt, updatedAt }
+// Only active === true memories are injected into AI context (Layer 3)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const mentorMemoriesCol = (uid) => collection(db, 'users', uid, 'aiMentorMemories');
+
+/** Add a new memory */
+export async function addMentorMemory(userId, { title = '', content, active = true }) {
+  if (!userId) throw new Error('User ID required');
+  if (!content?.trim()) throw new Error('Content is required');
+  const docRef = await addDoc(mentorMemoriesCol(userId), {
+    title:     title.trim(),
+    content:   content.trim(),
+    active:    !!active,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return docRef.id;
+}
+
+/** Update an existing memory (title, content, and/or active flag) */
+export async function updateMentorMemory(userId, memoryId, updates) {
+  if (!userId || !memoryId) throw new Error('userId and memoryId required');
+  const allowed  = ['title', 'content', 'active'];
+  const filtered = Object.fromEntries(
+    Object.entries(updates).filter(([k]) => allowed.includes(k))
+  );
+  await updateDoc(
+    doc(db, 'users', userId, 'aiMentorMemories', memoryId),
+    { ...filtered, updatedAt: now() }
+  );
+}
+
+/** Permanently delete a memory */
+export async function deleteMentorMemory(userId, memoryId) {
+  if (!userId || !memoryId) throw new Error('userId and memoryId required');
+  await deleteDoc(doc(db, 'users', userId, 'aiMentorMemories', memoryId));
+}
+
+/** Fetch ALL memories (active + disabled) — for the Memory Manager UI */
+export async function getMentorMemories(userId) {
+  if (!userId) return [];
+  const q    = query(mentorMemoriesCol(userId), orderBy('createdAt', 'desc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Fetch only ACTIVE memories — used when building the AI prompt context */
+export async function getActiveMentorMemories(userId) {
+  if (!userId) return [];
+  const q = query(
+    mentorMemoriesCol(userId),
+    where('active', '==', true),
+    orderBy('createdAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+/** Real-time subscription to ALL memories — drives the Memory Manager UI */
+export function subscribeToMentorMemories(userId, callback, onError) {
+  if (!userId) return () => {};
+  const q = query(mentorMemoriesCol(userId), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    onError || console.error
+  );
+}

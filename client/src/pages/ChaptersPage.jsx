@@ -1,23 +1,26 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   BookOpen, Search, ChevronDown, ChevronRight, RefreshCw,
-  CheckCircle2, Circle, FileText, HelpCircle, ClipboardList,
+  CheckCircle2, Circle, FileText, HelpCircle, ClipboardList, Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
 import { useTopicStore } from '../store/useTopicStore';
-import { getChapters, seedChapters, batchGetTopicProgress } from '../firebase/db';
 import {
-  CHAPTER_DATA, SUBJECT_DISPLAY_NAMES, SUBJECT_COLORS,
-  HSC_SUBJECTS, normalizeLegacyStatus, getTopicsForChapter,
-  calcChapterStudyPct, calcChapterRevisionPct,
-} from '../lib/chapters-data';
+  SYLLABUS,
+  HSC_SUBJECT_KEYS,
+  SUBJECT_DISPLAY_NAMES,
+  SUBJECT_COLORS,
+  getTopicsForChapter,
+} from '../data/syllabus';
+import {
+  calculateChapterProgress,
+  calculateSubjectProgress,
+  calculateOverallProgress,
+} from '../lib/progressEngine';
 
-// Stable empty object — MUST be outside component to prevent infinite re-render.
-// Using inline `?? {}` in a Zustand selector creates a new object each render,
-// causing Zustand to detect a "change" every cycle → React error #185.
+// Stable empty object — prevents infinite re-render
 const EMPTY_MAP = {};
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Practice type visual config
@@ -79,9 +82,9 @@ function TopicItem({ topic, completion, onToggleStudied, onToggleRevision }) {
   const cfg        = isPractice ? PRACTICE_CONFIG[topic.type] : null;
 
   const studied = !!completion?.studied;
-  const rev1    = !!completion?.revisions?.['1'];
-  const rev2    = !!completion?.revisions?.['2'];
-  const rev3    = !!completion?.revisions?.['3'];
+  const rev1    = !!(completion?.revisions?.['1'] || completion?.['revisions.1']);
+  const rev2    = !!(completion?.revisions?.['2'] || completion?.['revisions.2']);
+  const rev3    = !!(completion?.revisions?.['3'] || completion?.['revisions.3']);
 
   if (isPractice) {
     const Icon = cfg.icon;
@@ -94,8 +97,8 @@ function TopicItem({ topic, completion, onToggleStudied, onToggleRevision }) {
           className="shrink-0 transition-transform active:scale-90"
         >
           {studied
-            ? <CheckCircle2 size={15} className={cfg.checkColor} />
-            : <Circle size={15} className="text-white/25 hover:text-white/50" />
+            ? <CheckCircle2 size={16} className={cfg.checkColor} />
+            : <Circle size={16} className="text-white/25 hover:text-white/50" />
           }
         </button>
       </div>
@@ -109,8 +112,8 @@ function TopicItem({ topic, completion, onToggleStudied, onToggleRevision }) {
         className="shrink-0 mt-0.5 transition-transform active:scale-90"
       >
         {studied
-          ? <CheckCircle2 size={15} className="text-emerald-400" />
-          : <Circle size={15} className="text-white/22 group-hover:text-white/45 transition-colors" />
+          ? <CheckCircle2 size={16} className="text-emerald-400" />
+          : <Circle size={16} className="text-white/22 group-hover:text-white/45 transition-colors" />
         }
       </button>
 
@@ -147,38 +150,33 @@ function TopicItem({ topic, completion, onToggleStudied, onToggleRevision }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chapter Row — reads from global store, starts listener when opened
+// Chapter Row — live progress from progressEngine
 // ─────────────────────────────────────────────────────────────────────────────
 function ChapterRow({ chapter, subjectColor }) {
-  const toast          = useUIStore(s => s.toast);
+  const toast           = useUIStore(s => s.toast);
   const [open, setOpen] = useState(false);
 
-  const allTopics    = getTopicsForChapter(chapter.subject, chapter.chapterNumber);
-  const legacyStatus = normalizeLegacyStatus(chapter.status);
+  const allTopics = useMemo(() => {
+    return chapter.topics || getTopicsForChapter(chapter.subject, chapter.chapterNumber) || [];
+  }, [chapter.subject, chapter.chapterNumber, chapter.topics]);
 
-  // Global store — single source of truth
+  // Global store & live listener
   const startListening  = useTopicStore(s => s.startListening);
   const updateTopicFn   = useTopicStore(s => s.updateTopic);
   const rawMap          = useTopicStore(s => s.topicMaps[chapter.id]);
   const completionMap   = rawMap ?? EMPTY_MAP;
 
-  // Start listener once chapter panel opens
+  // Start real-time listener when chapter opens
   useEffect(() => {
     if (!open || !chapter.id || !allTopics.length) return;
-    startListening(chapter.id, allTopics, legacyStatus);
-  }, [open, chapter.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    startListening(chapter.id, allTopics, chapter.status || 'not_started');
+  }, [open, chapter.id, allTopics]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Derived progress from global store — always live
-  const studyPct  = calcChapterStudyPct(allTopics, completionMap);
-  const rev1Pct   = calcChapterRevisionPct(allTopics, completionMap, 1);
-  const rev2Pct   = calcChapterRevisionPct(allTopics, completionMap, 2);
-  const rev3Pct   = calcChapterRevisionPct(allTopics, completionMap, 3);
-  const doneCount = allTopics.filter(t => completionMap[t.slug]?.studied).length;
-  const hasData   = !!rawMap;
+  // Derived progress from central engine
+  const progress = calculateChapterProgress({ ...chapter, topics: allTopics }, completionMap);
+  const loading = open && !rawMap;
 
-  const loading   = open && !hasData;
-
-  // chapterMeta for revision auto-queue
+  // chapterMeta for revision queue tracking
   const chapterMeta = {
     userId: chapter.userId,
     subject: chapter.subject,
@@ -188,9 +186,9 @@ function ChapterRow({ chapter, subjectColor }) {
 
   const handleToggleStudied = useCallback(async (slug, value) => {
     try {
-      await updateTopicFn(chapter.id, slug, { studied: value }, value ? chapterMeta : null);
+      await updateTopicFn(chapter.id, slug, { studied: value }, chapterMeta);
       if (!value) {
-        // Clear all revisions when un-studying
+        // Clear revisions when un-studying
         await updateTopicFn(chapter.id, slug, { revisionLevel: 1, revisionDone: false });
         await updateTopicFn(chapter.id, slug, { revisionLevel: 2, revisionDone: false });
         await updateTopicFn(chapter.id, slug, { revisionLevel: 3, revisionDone: false });
@@ -198,21 +196,23 @@ function ChapterRow({ chapter, subjectColor }) {
     } catch {
       toast('আপডেট ব্যর্থ হয়েছে', 'error');
     }
-  }, [chapter.id, updateTopicFn, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chapter.id, updateTopicFn, toast, chapterMeta]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleRevision = useCallback(async (slug, level, value) => {
     try {
-      await updateTopicFn(chapter.id, slug, { revisionLevel: level, revisionDone: value });
+      await updateTopicFn(chapter.id, slug, { revisionLevel: level, revisionDone: value }, chapterMeta);
     } catch {
       toast('রিভিশন আপডেট ব্যর্থ', 'error');
     }
-  }, [chapter.id, updateTopicFn, toast]);
+  }, [chapter.id, updateTopicFn, toast, chapterMeta]);
 
   const hasTopics = allTopics.length > 0;
 
   return (
-    <div className="rounded-xl border border-white/[0.055] overflow-hidden">
-      {/* Chapter header — progress always visible */}
+    <div className={`rounded-xl border transition-all overflow-hidden ${
+      progress.isCompleted ? 'border-emerald-500/20 bg-emerald-500/[0.02]' : 'border-white/[0.055]'
+    }`}>
+      {/* Chapter header */}
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/[0.035] transition-colors text-left"
@@ -228,16 +228,22 @@ function ChapterRow({ chapter, subjectColor }) {
           {chapter.chapterName}
         </span>
 
+        {progress.isCompleted && (
+          <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full font-medium shrink-0">
+            <Check size={10} /> সম্পূর্ণ
+          </span>
+        )}
+
         {hasTopics && (
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[10px] text-white/30 tabular-nums">
-              {doneCount}/{allTopics.length}
+            <span className="text-[10px] text-white/40 tabular-nums">
+              {progress.completedUnits}/{progress.totalUnits}
             </span>
             <div className="w-14 hidden sm:block">
-              <MiniBar pct={studyPct} color={subjectColor} />
+              <MiniBar pct={progress.progressPct} color={progress.isCompleted ? '#10b981' : subjectColor} />
             </div>
-            {rev1Pct > 0 && (
-              <span className="text-[9px] text-indigo-300/60 hidden md:block">R1·{rev1Pct}%</span>
+            {progress.rev1Pct > 0 && (
+              <span className="text-[9px] text-indigo-300/60 hidden md:block">R1·{progress.rev1Pct}%</span>
             )}
           </div>
         )}
@@ -256,11 +262,11 @@ function ChapterRow({ chapter, subjectColor }) {
             <div className="border-t border-white/[0.05] bg-white/[0.012]">
               {hasTopics && (
                 <div className="px-3 pt-2.5 pb-1.5 space-y-1.5">
-                  <MiniBar pct={studyPct} color={subjectColor} label="Study" />
+                  <MiniBar pct={progress.progressPct} color={progress.isCompleted ? '#10b981' : subjectColor} label="Study" />
                   <div className="flex items-center gap-2">
-                    <MiniBar pct={rev1Pct} color="#818cf8" label="R1" dim={rev1Pct === 0} />
-                    <MiniBar pct={rev2Pct} color="#a78bfa" label="R2" dim={rev2Pct === 0} />
-                    <MiniBar pct={rev3Pct} color="#c084fc" label="R3" dim={rev3Pct === 0} />
+                    <MiniBar pct={progress.rev1Pct} color="#818cf8" label="R1" dim={progress.rev1Pct === 0} />
+                    <MiniBar pct={progress.rev2Pct} color="#a78bfa" label="R2" dim={progress.rev2Pct === 0} />
+                    <MiniBar pct={progress.rev3Pct} color="#c084fc" label="R3" dim={progress.rev3Pct === 0} />
                   </div>
                 </div>
               )}
@@ -276,11 +282,11 @@ function ChapterRow({ chapter, subjectColor }) {
                 <div className="px-2 py-2 space-y-0.5">
                   {allTopics.map(topic => (
                     <TopicItem
-                      key={topic.slug}
+                      key={topic.slug || topic.id}
                       topic={topic}
-                      completion={completionMap[topic.slug]}
-                      onToggleStudied={(val) => handleToggleStudied(topic.slug, val)}
-                      onToggleRevision={(level, val) => handleToggleRevision(topic.slug, level, val)}
+                      completion={completionMap[topic.id] || completionMap[topic.slug]}
+                      onToggleStudied={(val) => handleToggleStudied(topic.slug || topic.id, val)}
+                      onToggleRevision={(level, val) => handleToggleRevision(topic.slug || topic.id, level, val)}
                     />
                   ))}
                 </div>
@@ -294,53 +300,33 @@ function ChapterRow({ chapter, subjectColor }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Subject Section — starts all chapter listeners on open
+// Subject Section — live subject-level aggregation
 // ─────────────────────────────────────────────────────────────────────────────
-function SubjectSection({ subject, chapters }) {
+function SubjectSection({ subjectKey, subjectData, chapters }) {
   const [open, setOpen] = useState(false);
-  const colors = SUBJECT_COLORS[subject] || SUBJECT_COLORS.Physics1;
+  const colors = subjectData.color || SUBJECT_COLORS[subjectKey] || SUBJECT_COLORS.Physics1;
 
-  // Global store selectors
   const startListening = useTopicStore(s => s.startListening);
   const topicMaps      = useTopicStore(s => s.topicMaps);
 
-  // When subject opens → pre-start listeners for ALL chapters in this subject
+  // When subject opens → pre-start listeners for all chapters in this subject
   useEffect(() => {
     if (!open) return;
     chapters.forEach(ch => {
-      const allTopics = getTopicsForChapter(ch.subject, ch.chapterNumber);
+      const allTopics = ch.topics || getTopicsForChapter(ch.subject, ch.chapterNumber);
       if (allTopics.length > 0) {
-        startListening(ch.id, allTopics, normalizeLegacyStatus(ch.status));
+        startListening(ch.id, allTopics, ch.status || 'not_started');
       }
     });
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, chapters, startListening]);
 
-  // Live subject progress from store
-  let totalTopics = 0, doneTopics = 0;
-  chapters.forEach(ch => {
-    const allTopics = getTopicsForChapter(ch.subject, ch.chapterNumber);
-    const map = topicMaps[ch.id] || {};
-    const studyTopics = allTopics.filter(t => t.type === 'topic');
-    totalTopics += studyTopics.length;
-    doneTopics  += studyTopics.filter(t => map[t.slug]?.studied).length;
-  });
-  // Fall back to legacy chapter-level count if store has no data yet
-  const hasStoreData = chapters.some(ch => Object.keys(topicMaps[ch.id] || {}).length > 0);
-  const legacyCompleted = chapters.filter(ch => {
-    const s = normalizeLegacyStatus(ch.status);
-    return s !== 'not_started' && s !== 'in_progress';
-  }).length;
+  // Live subject progress from central engine
+  const subjectProg = calculateSubjectProgress(subjectData, topicMaps);
 
-  const pct = hasStoreData
-    ? (totalTopics > 0 ? Math.round((doneTopics / totalTopics) * 100) : 0)
-    : (chapters.length ? Math.round((legacyCompleted / chapters.length) * 100) : 0);
-
-  const countLabel = hasStoreData
-    ? `${doneTopics}/${totalTopics} টপিক`
-    : `${legacyCompleted}/${chapters.length} অধ্যায়`;
+  const countLabel = `${subjectProg.completedUnits}/${subjectProg.totalUnits} ইউনিট · ${subjectProg.completedChapters}/${subjectProg.totalChapters} অধ্যায়`;
 
   return (
-    <div className={`rounded-2xl border bg-gradient-to-br ${colors.bg} ${colors.border} overflow-hidden`}>
+    <div className={`rounded-2xl border bg-gradient-to-br ${colors.bg} ${colors.border} overflow-hidden transition-all`}>
       <button
         onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
@@ -350,19 +336,19 @@ function SubjectSection({ subject, chapters }) {
           : <ChevronRight size={15} className="text-white/30 shrink-0" />
         }
         <span className={`font-semibold flex-1 bangla text-sm ${colors.text}`}>
-          {SUBJECT_DISPLAY_NAMES[subject] || subject}
+          {subjectData.name || SUBJECT_DISPLAY_NAMES[subjectKey]}
         </span>
         <div className="flex items-center gap-2.5 shrink-0">
-          <span className="text-[11px] text-white/40">{countLabel}</span>
+          <span className="text-[11px] text-white/40 hidden sm:inline">{countLabel}</span>
           <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
             <motion.div
               className="h-full rounded-full"
-              animate={{ width: `${pct}%` }}
+              animate={{ width: `${subjectProg.progressPct}%` }}
               transition={{ duration: 0.6, ease: 'easeOut' }}
               style={{ backgroundColor: colors.hex }}
             />
           </div>
-          <span className="text-xs text-white/50 w-8 text-right tabular-nums">{pct}%</span>
+          <span className="text-xs text-white/50 w-8 text-right tabular-nums font-semibold">{subjectProg.progressPct}%</span>
         </div>
       </button>
 
@@ -386,98 +372,63 @@ function SubjectSection({ subject, chapters }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Page
+// Main Page — Instant static syllabus render + live Zustand store
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ChaptersPage() {
-  const user  = useAuthStore(s => s.user);
-  const toast = useUIStore(s => s.toast);
-  const [chapters, setChapters] = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
-  const [seeding,  setSeeding]  = useState(false);
-  const [search,   setSearch]   = useState('');
+  const user = useAuthStore(s => s.user);
+  const [search, setSearch] = useState('');
 
-  // Overall live progress from store
+  // Bulk load user topics on mount
+  useEffect(() => {
+    if (user?.uid) {
+      useTopicStore.getState().loadAllUserTopics(user.uid);
+    }
+  }, [user?.uid]);
+
+  // Read all topic maps for overall live progress
   const topicMaps = useTopicStore(s => s.topicMaps);
-  let overallTotal = 0, overallDone = 0;
-  chapters.forEach(ch => {
-    const allTopics = getTopicsForChapter(ch.subject, ch.chapterNumber);
-    const map = topicMaps[ch.id] || {};
-    const studyTopics = allTopics.filter(t => t.type === 'topic');
-    overallTotal += studyTopics.length;
-    overallDone  += studyTopics.filter(t => map[t.slug]?.studied).length;
-  });
-  const hasStoreData = chapters.some(ch => Object.keys(topicMaps[ch.id] || {}).length > 0);
-  const legacyDone = chapters.filter(ch => {
-    const s = normalizeLegacyStatus(ch.status);
-    return s !== 'not_started' && s !== 'in_progress';
-  }).length;
-  const totalPct = hasStoreData
-    ? (overallTotal > 0 ? Math.round((overallDone / overallTotal) * 100) : 0)
-    : (chapters.length ? Math.round((legacyDone / chapters.length) * 100) : 0);
+  const overallProg = calculateOverallProgress(HSC_SUBJECT_KEYS, topicMaps);
 
-  // Access store's raw setter for bulk-populate on mount
-  const setTopicMapBulk = useTopicStore(s => s.setTopicMapBulk);
+  // Generate full chapter hierarchy statically from SYLLABUS
+  const subjectsMap = useMemo(() => {
+    const map = {};
+    HSC_SUBJECT_KEYS.forEach(subjKey => {
+      const subj = SYLLABUS[subjKey];
+      if (!subj) return;
 
-  const load = useCallback(() => {
-    if (!user?.uid) return;
-    setLoading(true);
-    setError(null);
-    getChapters(user.uid)
-      .then(async ch => {
-        setChapters(ch || []);
-        setLoading(false);
-        // Bulk-fetch all topic data on page mount so progress is immediately visible
-        if (ch?.length) {
-          try {
-            const ids = ch.map(c => c.id);
-            const maps = await batchGetTopicProgress(ids);
-            // Populate store with all chapter topic maps at once
-            Object.entries(maps).forEach(([chId, map]) => {
-              if (Object.keys(map).length > 0) {
-                useTopicStore.getState().setTopicMapBulk(chId, map);
-              }
-            });
-          } catch (e) {
-            console.warn('[ChaptersPage] bulk topic fetch failed', e);
-          }
-        }
-      })
-      .catch(err => {
-        console.error('[ChaptersPage]', err);
-        setError('অধ্যায় লোড করতে সমস্যা হয়েছে।');
-        setLoading(false);
+      const chs = subj.chapters.map(c => ({
+        ...c,
+        id: user?.uid ? `${user.uid}_${subjKey}_${c.chapterNumber}` : `guest_${subjKey}_${c.chapterNumber}`,
+        userId: user?.uid,
+        subject: subjKey,
+      }));
+
+      // Filter by search term
+      const q = search.toLowerCase().trim();
+      const filteredChapters = chs.filter(ch => {
+        if (!q) return true;
+        return (
+          ch.chapterName.toLowerCase().includes(q) ||
+          subj.name.toLowerCase().includes(q) ||
+          subj.shortName.toLowerCase().includes(q)
+        );
       });
-  }, [user?.uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [load]);
+      if (filteredChapters.length > 0) {
+        map[subjKey] = {
+          subjectData: subj,
+          chapters: filteredChapters,
+        };
+      }
+    });
+    return map;
+  }, [user?.uid, search]);
 
-  const handleSeed = async () => {
-    if (!user?.uid) return;
-    setSeeding(true);
-    try {
-      await seedChapters(user.uid, CHAPTER_DATA);
-      const chs = await getChapters(user.uid);
-      setChapters(chs || []);
-      if (chs?.length) { toast('সকল অধ্যায় লোড হয়েছে! 🎉', 'success'); setError(null); }
-    } catch (err) {
-      toast('অধ্যায় লোড করতে ব্যর্থ', 'error');
-      setError(err.message || 'Error');
-    } finally { setSeeding(false); }
-  };
-
-  const filtered = chapters.filter(ch => {
-    const q = search.toLowerCase();
-    return !search
-      || ch.chapterName?.toLowerCase().includes(q)
-      || (SUBJECT_DISPLAY_NAMES[ch.subject] || ch.subject).toLowerCase().includes(q);
-  });
-
-  const bySubject = HSC_SUBJECTS.reduce((acc, s) => {
-    const subs = filtered.filter(ch => ch.subject === s);
-    if (subs.length) acc[s] = subs;
-    return acc;
-  }, {});
+  const refreshAll = useCallback(() => {
+    if (user?.uid) {
+      useTopicStore.getState().loadAllUserTopics(user.uid);
+    }
+  }, [user?.uid]);
 
   return (
     <div className="p-4 lg:p-6 max-w-3xl mx-auto space-y-5 pb-24">
@@ -487,43 +438,40 @@ export default function ChaptersPage() {
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <BookOpen size={20} className="text-cyan-400" />
-            অধ্যায় অগ্রগতি
+            অধ্যায় ও টপিক ট্র্যাকার
           </h2>
           <p className="text-sm text-white/35 mt-1 bangla">
-            {hasStoreData
-              ? `${overallDone}/${overallTotal} টপিক সম্পূর্ণ`
-              : `${legacyDone}/${chapters.length} অধ্যায়`
-            }
-            · বিষয়ে ক্লিক করে টপিক দেখুন
+            {overallProg.completedUnits}/{overallProg.totalUnits} ইউনিট · {overallProg.completedChapters}/{overallProg.totalChapters} অধ্যায় সম্পূর্ণ
           </p>
         </div>
         <button
-          onClick={load}
+          onClick={refreshAll}
+          title="রিফ্রেশ করুন"
           className="p-2 rounded-xl text-white/30 hover:text-white hover:bg-white/5 transition-all shrink-0"
         >
           <RefreshCw size={15} />
         </button>
       </div>
 
-      {/* Overall progress bar — live from store */}
+      {/* Overall progress bar — live from store & engine */}
       <div className="rounded-xl bg-white/[0.025] border border-white/[0.07] p-4 space-y-2">
         <div className="flex justify-between text-xs">
-          <span className="text-white/40 bangla">মোট অগ্রগতি</span>
-          <span className="text-white font-semibold tabular-nums">{totalPct}%</span>
+          <span className="text-white/40 bangla">সর্বমোট এইচএসসি প্রস্তুতি</span>
+          <span className="text-white font-semibold tabular-nums">{overallProg.progressPct}%</span>
         </div>
         <div className="h-2 bg-white/6 rounded-full overflow-hidden">
           <motion.div
-            animate={{ width: `${totalPct}%` }}
+            animate={{ width: `${overallProg.progressPct}%` }}
             transition={{ duration: 0.7, ease: 'easeOut' }}
             className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-purple-500"
           />
         </div>
         <p className="text-[10px] text-white/20 bangla">
-          💡 বিষয়ে ক্লিক → অধ্যায়ে ক্লিক → টপিক ও CQ/MCQ/Mock ট্র্যাক করুন
+          💡 বিষয়ে ক্লিক → অধ্যায়ে ক্লিক → টপিক ও CQ/MCQ/Mock মার্ক করুন
         </p>
       </div>
 
-      {/* Search — fixed contrast */}
+      {/* Search */}
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         <input
@@ -538,50 +486,18 @@ export default function ChaptersPage() {
         />
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-12 space-y-3">
-          <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-white/40 bangla">অধ্যায় লোড হচ্ছে…</p>
-        </div>
-
-      ) : error ? (
-        <div className="text-center py-10 px-4 space-y-4 rounded-2xl bg-red-500/8 border border-red-500/15">
-          <p className="text-red-400 font-semibold bangla text-sm">লোড করতে সমস্যা হয়েছে</p>
-          <p className="text-xs text-white/40 bangla">{error}</p>
-          <button onClick={load}
-            className="px-4 py-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/20
-                       text-xs font-medium inline-flex items-center gap-2 transition-all bangla"
-          >
-            <RefreshCw size={13} /> পুনরায় চেষ্টা
-          </button>
-        </div>
-
-      ) : chapters.length === 0 ? (
-        <div className="text-center py-12 space-y-4">
-          <BookOpen size={44} className="mx-auto text-white/15" />
-          <div>
-            <p className="text-white font-semibold bangla">কোনো অধ্যায় নেই</p>
-            <p className="text-sm text-white/30 mt-1 bangla">সকল বিষয়ের অধ্যায় লোড করুন</p>
-          </div>
-          <button onClick={handleSeed} disabled={seeding}
-            className="px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 text-white
-                       text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2 shadow-lg shadow-cyan-500/20"
-          >
-            {seeding
-              ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>লোড হচ্ছে…</span></>
-              : <span>📚 সকল অধ্যায় লোড করুন</span>
-            }
-          </button>
-        </div>
-
-      ) : Object.keys(bySubject).length === 0 ? (
-        <div className="text-center py-8 text-white/25 bangla">কোনো ফলাফল নেই।</div>
-
+      {/* All 13 Subject Sections */}
+      {Object.keys(subjectsMap).length === 0 ? (
+        <div className="text-center py-8 text-white/25 bangla">কোনো ফলাফল পাওয়া যায়নি।</div>
       ) : (
         <div className="space-y-3">
-          {Object.entries(bySubject).map(([subj, chs]) => (
-            <SubjectSection key={subj} subject={subj} chapters={chs} />
+          {Object.entries(subjectsMap).map(([subjKey, { subjectData, chapters }]) => (
+            <SubjectSection
+              key={subjKey}
+              subjectKey={subjKey}
+              subjectData={subjectData}
+              chapters={chapters}
+            />
           ))}
         </div>
       )}

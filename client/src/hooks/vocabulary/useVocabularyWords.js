@@ -50,8 +50,13 @@ export function useUpdateWord() {
   const uid = useAuthStore(s => s.user?.uid);
   const qc  = useQueryClient();
   return useMutation({
-    // expects { wordId, data }
-    mutationFn: ({ wordId, data }) => updateVocabWord(uid, wordId, data),
+    mutationFn: (args) => {
+      const wordId = args.wordId || args.id;
+      const data = args.data ? args.data : { ...args };
+      delete data.id;
+      delete data.wordId;
+      return updateVocabWord(uid, wordId, data);
+    },
     onSuccess:  () => qc.invalidateQueries({ queryKey: VOCAB_KEYS.all }),
   });
 }

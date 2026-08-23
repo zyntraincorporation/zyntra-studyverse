@@ -7,6 +7,8 @@ async function getUserWords(userId, { search, sort, filter, skip, take }) {
     where.OR = [
       { word: { contains: search, mode: 'insensitive' } },
       { banglaMeaning: { contains: search, mode: 'insensitive' } },
+      { banglaDefinition: { contains: search, mode: 'insensitive' } },
+      { englishDefinition: { contains: search, mode: 'insensitive' } },
     ];
   }
 
@@ -28,8 +30,16 @@ async function getUserWords(userId, { search, sort, filter, skip, take }) {
 }
 
 async function createWord(userId, data) {
+  const banglaMeaning = data.banglaMeaning || data.banglaDefinition || '';
+  const banglaDefinition = data.banglaDefinition || data.banglaMeaning || '';
   return prisma.vocabularyWord.create({
-    data: { ...data, userId, nextReviewAt: new Date() },
+    data: {
+      ...data,
+      banglaMeaning,
+      banglaDefinition,
+      userId,
+      nextReviewAt: new Date(),
+    },
   });
 }
 

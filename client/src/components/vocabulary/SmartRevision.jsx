@@ -214,25 +214,39 @@ export default function SmartRevision() {
                   >
                     {!flipped ? (
                       <>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mb-3">English</p>
-                        <p className="text-white text-3xl font-bold">{current.word}</p>
+                        <p className="text-xs text-slate-400 uppercase tracking-widest mb-2 font-semibold">English</p>
+                        <div className="flex items-center gap-2 justify-center flex-wrap">
+                          <p className="text-white text-3xl font-bold">{current.word}</p>
+                          {current.partOfSpeech && (
+                            <span className="text-purple-300 text-[10px] font-semibold bg-purple-500/20 border border-purple-500/30 rounded px-1.5 py-0.5">
+                              {current.partOfSpeech}
+                            </span>
+                          )}
+                        </div>
                         {current.pronunciation && (
-                          <p className="text-slate-500 text-sm mt-2">/{current.pronunciation}/</p>
+                          <p className="text-slate-400 text-xs font-mono mt-1.5">/{current.pronunciation}/</p>
                         )}
-                        <p className="text-slate-600 text-xs mt-4">
+                        <p className="text-slate-500 text-xs mt-4">
                           Tap to flip · Swipe right = known · Left = forgot
                         </p>
                       </>
                     ) : (
-                      <>
-                        <p className="text-xs text-purple-400 uppercase tracking-widest mb-3">Bangla Meaning</p>
-                        <p className="text-white text-2xl font-bold">{current.banglaMeaning}</p>
+                      <div className="space-y-2 max-w-md w-full">
+                        <p className="text-xs text-purple-400 uppercase tracking-widest font-semibold">বাংলা অর্থ ও ব্যাখ্যা</p>
+                        <p className="text-white text-2xl font-bold">{current.banglaMeaning || current.banglaDefinition}</p>
+                        {current.banglaDefinition && current.banglaDefinition !== current.banglaMeaning && (
+                          <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-left">
+                            <span className="text-[10px] text-teal-400 font-semibold block mb-0.5">বাংলা Definition:</span>
+                            <p className="text-slate-200 text-xs leading-relaxed">{current.banglaDefinition}</p>
+                          </div>
+                        )}
                         {current.synonyms?.length > 0 && (
-                          <p className="text-slate-500 text-xs mt-3">
-                            Synonyms: {current.synonyms.slice(0, 3).join(', ')}
+                          <p className="text-slate-400 text-xs pt-1">
+                            <span className="text-cyan-400 font-medium">Synonyms: </span>
+                            {current.synonyms.slice(0, 4).join(', ')}
                           </p>
                         )}
-                      </>
+                      </div>
                     )}
                   </motion.div>
                 </AnimatePresence>

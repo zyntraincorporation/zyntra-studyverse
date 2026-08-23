@@ -3,8 +3,9 @@ import { Sparkles, RefreshCw, Clock, TrendingUp, AlertCircle } from 'lucide-reac
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useUIStore } from '../store';
 import { useTopicStore } from '../store/useTopicStore';
-import { generateAndSaveAIReport, getAllAIReports, getLatestAIReport, getChapters } from '../firebase/db';
+import { generateAndSaveAIReport, getAllAIReports, getLatestAIReport, getChapters, getActiveMentorMemories } from '../firebase/db';
 import { getBSTDateString } from '../lib/bst';
+import { formatMemoriesContext } from '../lib/mentorApi';
 
 function ReportCard({ report, isLatest }) {
   const [expanded, setExpanded] = useState(isLatest);
@@ -93,9 +94,13 @@ export default function AIReportPage() {
     }
     setGenerating(true);
     try {
-      // Pass latest topic-level progress to AI
+      // Fetch active memories for Layer 3 context injection
+      const activeMemories = await getActiveMentorMemories(user.uid);
+      const memoriesContext = formatMemoriesContext(activeMemories);
+
+      // Pass latest topic-level progress + memories to AI
       const topicSummary = getAITopicSummary(allChapters);
-      const result = await generateAndSaveAIReport(user.uid, days, topicSummary);
+      const result = await generateAndSaveAIReport(user.uid, days, topicSummary, memoriesContext);
       setReports(prev => [{ ...result, id: result.id, generatedAt: { toDate: () => new Date() } }, ...prev]);
       toast('AI report generated! 🤖', 'success');
     } catch (err) {

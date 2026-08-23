@@ -97,26 +97,36 @@ export default function QuickRecallStrip() {
               <motion.div
                 animate={{ rotateY: flipped ? 180 : 0 }}
                 transition={{ duration: 0.4 }}
-                style={{ transformStyle: 'preserve-3d', position: 'relative', minHeight: 120 }}
+                style={{ transformStyle: 'preserve-3d', position: 'relative', minHeight: 140 }}
               >
                 {/* Front */}
                 <div
-                  className="absolute inset-0 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center p-5"
+                  className="absolute inset-0 rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col items-center justify-center p-5 text-center"
                   style={{ backfaceVisibility: 'hidden' }}
                 >
-                  <p className="text-slate-400 text-xs mb-2">English</p>
+                  <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider font-semibold">English</p>
                   <p className="text-white text-2xl font-bold">{current.word}</p>
+                  {current.partOfSpeech && (
+                    <span className="text-purple-300 text-[10px] bg-purple-500/15 border border-purple-500/30 rounded-md px-1.5 py-0.5 mt-1">
+                      {current.partOfSpeech}
+                    </span>
+                  )}
                   <p className="text-slate-500 text-xs mt-2">Tap to reveal</p>
                 </div>
                 {/* Back */}
                 <div
-                  className="absolute inset-0 rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-900/30 to-slate-900 flex flex-col items-center justify-center p-5"
+                  className="absolute inset-0 rounded-2xl border border-purple-500/20 bg-gradient-to-br from-purple-900/30 to-slate-900 flex flex-col items-center justify-center p-4 text-center space-y-1"
                   style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
                 >
-                  <p className="text-purple-400 text-xs mb-2">Bangla Meaning</p>
-                  <p className="text-white text-xl font-bold">{current.banglaMeaning}</p>
+                  <p className="text-purple-400 text-xs uppercase tracking-wider font-semibold">বাংলা অর্থ</p>
+                  <p className="text-white text-xl font-bold">{current.banglaMeaning || current.banglaDefinition}</p>
+                  {current.banglaDefinition && current.banglaDefinition !== current.banglaMeaning && (
+                    <p className="text-slate-300 text-xs max-w-sm px-2 line-clamp-2 leading-tight mt-0.5">
+                      {current.banglaDefinition}
+                    </p>
+                  )}
                   {current.pronunciation && (
-                    <p className="text-slate-500 text-xs mt-1">/{current.pronunciation}/</p>
+                    <p className="text-slate-500 text-xs font-mono">/{current.pronunciation}/</p>
                   )}
                 </div>
               </motion.div>

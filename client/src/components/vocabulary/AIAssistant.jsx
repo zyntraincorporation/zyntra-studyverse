@@ -88,53 +88,65 @@ export default function AIAssistant() {
                   <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="space-y-2 text-sm"
+                    className="space-y-2.5 text-sm"
                   >
-                    {/* Word + pronunciation */}
+                    {/* Word + pronunciation + POS */}
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <span className="text-white font-bold text-lg">{lexiResult.word}</span>
-                      {lexiResult.pronunciation && (
-                        <span className="text-slate-500 text-xs">/{lexiResult.pronunciation}/</span>
-                      )}
                       {lexiResult.partOfSpeech && (
-                        <span className="text-purple-400 text-[10px] bg-purple-500/10 border border-purple-500/20 rounded-md px-1.5 py-0.5">
+                        <span className="text-purple-300 text-[10px] font-semibold bg-purple-500/15 border border-purple-500/30 rounded-md px-1.5 py-0.5">
                           {lexiResult.partOfSpeech}
                         </span>
                       )}
+                      {lexiResult.pronunciation && (
+                        <span className="text-slate-400 text-xs font-mono">/{lexiResult.pronunciation}/</span>
+                      )}
                     </div>
 
-                    {/* Bangla meaning — always prominent */}
-                    {lexiResult.banglaMeaning && (
-                      <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-3 py-2">
-                        <p className="text-[10px] text-green-400 font-semibold mb-0.5">বাংলা অর্থ</p>
-                        <p className="text-white text-sm">{lexiResult.banglaMeaning}</p>
+                    {/* English Definition */}
+                    {(lexiResult.englishDefinition || lexiResult.englishMeaning) && (
+                      <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs">
+                        <p className="text-[10px] text-cyan-400 font-semibold uppercase tracking-wider mb-0.5">English Definition</p>
+                        <p className="text-slate-200 leading-relaxed">{lexiResult.englishDefinition || lexiResult.englishMeaning}</p>
                       </div>
                     )}
 
-                    {/* English meaning */}
-                    {lexiResult.englishMeaning && (
-                      <p className="text-slate-300 text-xs leading-relaxed">{lexiResult.englishMeaning}</p>
+                    {/* Bangla Intelligence Box (Meaning + Definition) */}
+                    {(lexiResult.banglaMeaning || lexiResult.banglaDefinition) && (
+                      <div className="bg-gradient-to-br from-emerald-950/30 to-teal-950/30 border border-emerald-500/25 rounded-xl px-3 py-2 space-y-1.5">
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">বাংলা অর্থ:</p>
+                          <p className="text-white text-sm font-semibold">{lexiResult.banglaMeaning || lexiResult.banglaDefinition}</p>
+                        </div>
+                        {lexiResult.banglaDefinition && lexiResult.banglaDefinition !== lexiResult.banglaMeaning && (
+                          <div className="pt-1 border-t border-emerald-500/20">
+                            <p className="text-[10px] text-teal-400 font-medium mb-0.5">বাংলা ব্যাখ্যা / Definition:</p>
+                            <p className="text-slate-300 text-xs leading-relaxed">{lexiResult.banglaDefinition}</p>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {/* Example */}
-                    {lexiResult.example && (
-                      <p className="text-slate-500 text-xs border-l-2 border-cyan-500/30 pl-2.5 italic leading-relaxed">
-                        {lexiResult.example}
+                    {(lexiResult.exampleSentence || lexiResult.example) && (
+                      <p className="text-slate-400 text-xs border-l-2 border-cyan-500/40 pl-2.5 italic leading-relaxed">
+                        "{lexiResult.exampleSentence || lexiResult.example}"
                       </p>
                     )}
 
                     {/* Synonyms & Antonyms */}
-                    <div className="flex gap-3 flex-wrap">
+                    <div className="flex gap-3 flex-wrap text-xs">
                       {lexiResult.synonyms?.length > 0 && (
-                        <p className="text-xs text-slate-400">
-                          <span className="text-cyan-500 font-medium">Syn: </span>
+                        <p className="text-slate-400">
+                          <span className="text-cyan-400 font-medium">Syn: </span>
                           {lexiResult.synonyms.join(', ')}
                         </p>
                       )}
                       {lexiResult.antonyms?.length > 0 && (
-                        <p className="text-xs text-slate-400">
+                        <p className="text-slate-400">
                           <span className="text-red-400 font-medium">Ant: </span>
                           {lexiResult.antonyms.join(', ')}
+                          {lexiResult.antonymMeaning && <span className="text-slate-500 ml-1">({lexiResult.antonymMeaning})</span>}
                         </p>
                       )}
                     </div>
@@ -142,9 +154,9 @@ export default function AIAssistant() {
                     {/* Save button */}
                     <button
                       onClick={handleSaveToForge}
-                      className="w-full mt-1 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-colors"
+                      className="w-full mt-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/30 transition-all active:scale-[0.98]"
                     >
-                      + Save to Vocabulary
+                      + Save & Edit in Word Forge
                     </button>
                   </motion.div>
                 )}

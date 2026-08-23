@@ -26,6 +26,13 @@ import {
   SUBJECT_DISPLAY_NAMES, SUBJECT_SHORT_NAMES, SUBJECT_COLORS,
   normalizeLegacyStatus,
 } from '../../lib/chapters-data';
+import { useTopicStore } from '../../store/useTopicStore';
+import { SYLLABUS } from '../../data/syllabus';
+import {
+  calculateSubjectProgress,
+  calculateChapterProgress,
+  calculateOverallProgress,
+} from '../../lib/progressEngine';
 import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
 import { usePartnerStats } from '../../hooks/usePartnerStats';
 import LiveStudyBanner from '../presence/LiveStudyBanner';
@@ -178,9 +185,9 @@ function SectionLabel({ icon: Icon, title, iconColor = 'text-white/30', action }
 
 /** Subject chapter drawer (slide-up modal) */
 function SubjectDrawer({ subject, chapters, colors, onClose }) {
-  const done  = countCompleted(chapters);
+  const doneCount = chapters.filter(c => c.isDone).length;
   const total = chapters.length;
-  const pct   = total ? Math.round((done / total) * 100) : 0;
+  const pct = total ? Math.round((doneCount / total) * 100) : 0;
   const safeColors = colors || {
     hex: '#10b981',
     bg: 'from-emerald-500/10 to-transparent',
@@ -203,7 +210,7 @@ function SubjectDrawer({ subject, chapters, colors, onClose }) {
         <div className={`flex items-center justify-between px-4 py-3.5 bg-gradient-to-r ${safeColors.bg} border-b ${safeColors.border}`}>
           <div>
             <p className={`font-bold bangla text-sm ${safeColors.text}`}>{SUBJECT_DISPLAY_NAMES?.[subject] || subject}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{done}/{total} অধ্যায় · {pct}% সম্পূর্ণ</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">{doneCount}/{total} অধ্যায় · {pct}% সম্পূর্ণ</p>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1">
             <X size={18} />
@@ -215,30 +222,24 @@ function SubjectDrawer({ subject, chapters, colors, onClose }) {
         </div>
         {/* Chapter list */}
         <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1 scrollbar-none">
-          {chapters.map(ch => {
-            const s      = normalizeLegacyStatus(ch.status);
-            const isDone = s !== 'not_started' && s !== 'in_progress';
-            return (
-              <div
-                key={ch.id}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all
-                  ${isDone
-                    ? `bg-gradient-to-r ${safeColors.bg} border ${safeColors.border}`
-                    : 'bg-white/[0.02] border border-white/5'}`}
-              >
-                <span className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: isDone ? safeColors.hex : 'rgba(255,255,255,0.1)' }} />
-                <span className={`flex-1 bangla text-xs leading-relaxed ${isDone ? safeColors.text : 'text-slate-500'}`}>
-                  {ch.chapterNumber}. {ch.chapterName}
-                </span>
-                {isDone && (
-                  <span className="text-[9px] text-slate-600 shrink-0">
-                    {s.startsWith('revised_') ? `×${s.replace('revised_', '')} Rev` : '✓'}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          {chapters.map(ch => (
+            <div
+              key={ch.id}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all
+                ${ch.isDone
+                  ? `bg-gradient-to-r ${safeColors.bg} border ${safeColors.border}`
+                  : 'bg-white/[0.02] border border-white/5'}`}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: ch.isDone ? safeColors.hex : 'rgba(255,255,255,0.1)' }} />
+              <span className={`flex-1 bangla text-xs leading-relaxed ${ch.isDone ? safeColors.text : 'text-slate-500'}`}>
+                {ch.chapterNumber}. {ch.chapterName}
+              </span>
+              <span className="text-[9px] text-slate-500 tabular-nums shrink-0">
+                {ch.progressPct}% {ch.isDone && '✓'}
+              </span>
+            </div>
+          ))}
         </div>
       </motion.div>
     </motion.div>
@@ -274,40 +275,71 @@ export default function DashboardPage() {
   const hscCD  = getCountdown(DEADLINES.hscExam);
   const buetCD = getCountdown(DEADLINES.buetAdmission);
 
-  // ── Chapters → HSC + BUET progress ───────────────────────────────────────
-  const [chapters,    setChapters]    = useState([]);
-  const [chapLoading, setChapLoading] = useState(true);
+  // ── Chapters & Topic Progress via Central Engine ──────────────────────────
+  const topicMaps = useTopicStore(s => s.topicMaps);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    getChapters(user.uid)
-      .then(all => { setChapters(all); setChapLoading(false); })
-      .catch(() => setChapLoading(false));
-  }, [user?.uid]);
+    if (user?.uid && Object.keys(topicMaps).length === 0) {
+      useTopicStore.getState().loadAllUserTopics(user.uid);
+    }
+  }, [user?.uid, topicMaps]);
 
-  // HSC subject breakdown
-  const hscBySubject = HSC_SUBJECTS.map(subj => {
-    const chs   = chapters.filter(ch => ch.subject === subj);
-    const done  = countCompleted(chs);
-    const total = chs.length;
-    const pct   = total ? Math.round((done / total) * 100) : 0;
-    return { subj, chs, done, total, pct, colors: SUBJECT_COLORS?.[subj] };
+  // HSC subject breakdown from central engine
+  const hscBySubject = HSC_SUBJECTS.map(subjKey => {
+    const subjData = SYLLABUS[subjKey];
+    const sp = calculateSubjectProgress(subjKey, topicMaps);
+    const chapters = (subjData?.chapters || []).map(ch => {
+      const chDocId = user?.uid ? `${user.uid}_${subjKey}_${ch.chapterNumber}` : ch.legacyDocId;
+      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.legacyDocId] || {});
+      return {
+        ...ch,
+        id: chDocId,
+        isDone: chProg.isCompleted,
+        progressPct: chProg.progressPct,
+      };
+    });
+    return {
+      subj: subjKey,
+      chs: chapters,
+      done: sp.completedChapters,
+      total: sp.totalChapters,
+      pct: sp.progressPct,
+      colors: subjData?.color || SUBJECT_COLORS?.[subjKey],
+    };
   });
-  const hscTotal   = hscBySubject.reduce((a, b) => a + b.total, 0);
-  const hscDone    = hscBySubject.reduce((a, b) => a + b.done,  0);
-  const hscOverall = hscTotal ? Math.round((hscDone / hscTotal) * 100) : 0;
+  const hscOverallData = calculateOverallProgress(HSC_SUBJECTS, topicMaps);
+  const hscTotal   = hscOverallData.totalChapters;
+  const hscDone    = hscOverallData.completedChapters;
+  const hscOverall = hscOverallData.progressPct;
 
-  // BUET PCM breakdown
-  const buetBySubject = BUET_SUBJECTS.map(subj => {
-    const chs   = chapters.filter(ch => ch.subject === subj);
-    const done  = countCompleted(chs);
-    const total = chs.length;
-    const pct   = total ? Math.round((done / total) * 100) : 0;
-    return { subj, chs, done, total, pct, colors: SUBJECT_COLORS?.[subj] };
+  // BUET PCM breakdown from central engine
+  const buetBySubject = BUET_SUBJECTS.map(subjKey => {
+    const subjData = SYLLABUS[subjKey];
+    const sp = calculateSubjectProgress(subjKey, topicMaps);
+    const chapters = (subjData?.chapters || []).map(ch => {
+      const chDocId = user?.uid ? `${user.uid}_${subjKey}_${ch.chapterNumber}` : ch.legacyDocId;
+      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.legacyDocId] || {});
+      return {
+        ...ch,
+        id: chDocId,
+        isDone: chProg.isCompleted,
+        progressPct: chProg.progressPct,
+      };
+    });
+    return {
+      subj: subjKey,
+      chs: chapters,
+      done: sp.completedChapters,
+      total: sp.totalChapters,
+      pct: sp.progressPct,
+      colors: subjData?.color || SUBJECT_COLORS?.[subjKey],
+    };
   });
-  const buetTotal   = buetBySubject.reduce((a, b) => a + b.total, 0);
-  const buetDone    = buetBySubject.reduce((a, b) => a + b.done,  0);
-  const buetOverall = buetTotal ? Math.round((buetDone / buetTotal) * 100) : 0;
+  const buetOverallData = calculateOverallProgress(BUET_SUBJECT_KEYS, topicMaps);
+  const buetTotal   = buetOverallData.totalChapters;
+  const buetDone    = buetOverallData.completedChapters;
+  const buetOverall = buetOverallData.progressPct;
+  const chapLoading = false;
 
   // ── Streak + Analytics ────────────────────────────────────────────────────
   const [streak,     setStreak]     = useState(0);

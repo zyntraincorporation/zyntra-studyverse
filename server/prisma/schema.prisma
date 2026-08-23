@@ -172,28 +172,32 @@ model MonthlyTarget {
 // ── 11. Vocabulary words ──────────────────────────────────────────────────────
 // Single-user app: userId is always 'saiful', kept for query filtering
 model VocabularyWord {
-  id             String   @id @default(cuid())
-  userId         String   @default("saiful")
-  word           String
-  banglaMeaning  String
-  pronunciation  String?
-  synonyms       String[] @default([])
-  antonyms       String[] @default([])
-  antonymMeaning String?
-  notes          String?
-  difficulty     Int      @default(1) // 1–5
-  tags           String[] @default([])
-  isArchived     Boolean  @default(false)
-  masteryLevel   Int      @default(0)   // 0–100
-  totalReviews   Int      @default(0)
-  correctCount   Int      @default(0)
-  failCount      Int      @default(0)
-  nextReviewAt   DateTime @default(now())
-  reviewInterval Int      @default(1)   // days
-  correctStreak  Int      @default(0)
-  lastReviewedAt DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String   @default("saiful")
+  word              String
+  banglaMeaning     String
+  banglaDefinition  String?
+  englishDefinition String?
+  partOfSpeech      String?
+  exampleSentence   String?
+  pronunciation     String?
+  synonyms          String[] @default([])
+  antonyms          String[] @default([])
+  antonymMeaning    String?
+  notes             String?
+  difficulty        Int      @default(1) // 1–5
+  tags              String[] @default([])
+  isArchived        Boolean  @default(false)
+  masteryLevel      Int      @default(0)   // 0–100
+  totalReviews      Int      @default(0)
+  correctCount      Int      @default(0)
+  failCount         Int      @default(0)
+  nextReviewAt      DateTime @default(now())
+  reviewInterval    Int      @default(1)   // days
+  correctStreak     Int      @default(0)
+  lastReviewedAt    DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   reviews VocabularyReview[]
 

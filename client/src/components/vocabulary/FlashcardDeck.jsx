@@ -190,10 +190,13 @@ export default function FlashcardDeck({
                     {flipped ? current.back : current.front}
                   </p>
                   {current.sublabel && !flipped && (
-                    <p className="text-slate-600 text-xs mt-3">{current.sublabel}</p>
+                    <p className="text-slate-500 text-xs mt-2">{current.sublabel}</p>
+                  )}
+                  {current.backSublabel && flipped && (
+                    <p className="text-slate-300 text-xs mt-2 max-w-sm px-2 leading-relaxed bg-white/5 rounded-lg py-1">{current.backSublabel}</p>
                   )}
                   {!flipped && (
-                    <p className="text-slate-700 text-xs mt-4">
+                    <p className="text-slate-700 text-xs mt-3">
                       Tap to flip · Swipe to judge
                     </p>
                   )}

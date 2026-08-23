@@ -25,16 +25,63 @@ export default function RecallArena() {
   const isDone = index >= queue.length;
 
   function getFront(word) {
-    if (flashMode === 'en_to_bn')        return { label: 'English', text: word.word };
-    if (flashMode === 'bn_to_en')        return { label: 'Bangla', text: word.banglaMeaning };
-    if (flashMode === 'synonym_to_word') return { label: 'Synonym', text: word.synonyms?.[0] || word.word };
-    return { label: 'Meaning', text: word.banglaMeaning };
+    if (flashMode === 'en_to_bn') {
+      return {
+        label: 'English',
+        text: word.word,
+        subtext: word.englishDefinition || word.englishMeaning || '',
+        pos: word.partOfSpeech,
+      };
+    }
+    if (flashMode === 'bn_to_en') {
+      return {
+        label: 'Bangla',
+        text: word.banglaMeaning || word.banglaDefinition,
+        subtext: word.banglaDefinition && word.banglaDefinition !== word.banglaMeaning ? word.banglaDefinition : '',
+      };
+    }
+    if (flashMode === 'synonym_to_word') {
+      return {
+        label: 'Synonym',
+        text: word.synonyms?.[0] || word.word,
+        subtext: word.synonyms?.slice(1, 3).join(', ') || '',
+      };
+    }
+    return {
+      label: 'Bangla Definition',
+      text: word.banglaMeaning || word.banglaDefinition,
+      subtext: word.banglaDefinition && word.banglaDefinition !== word.banglaMeaning ? word.banglaDefinition : '',
+    };
   }
+
   function getBack(word) {
-    if (flashMode === 'en_to_bn')        return { label: 'Bangla Meaning', text: word.banglaMeaning };
-    if (flashMode === 'bn_to_en')        return { label: 'English', text: word.word };
-    if (flashMode === 'synonym_to_word') return { label: 'Word', text: word.word };
-    return { label: 'Word', text: word.word };
+    if (flashMode === 'en_to_bn') {
+      return {
+        label: 'Bangla Meaning & Definition',
+        text: word.banglaMeaning || word.banglaDefinition,
+        subtext: word.banglaDefinition && word.banglaDefinition !== word.banglaMeaning ? word.banglaDefinition : '',
+      };
+    }
+    if (flashMode === 'bn_to_en') {
+      return {
+        label: 'English Word',
+        text: word.word,
+        subtext: word.englishDefinition || word.englishMeaning || '',
+        pos: word.partOfSpeech,
+      };
+    }
+    if (flashMode === 'synonym_to_word') {
+      return {
+        label: 'Word',
+        text: word.word,
+        subtext: word.banglaMeaning || word.banglaDefinition || '',
+      };
+    }
+    return {
+      label: 'Word',
+      text: word.word,
+      subtext: word.englishDefinition || '',
+    };
   }
 
   function handleResult(result, confidence) {
@@ -46,6 +93,8 @@ export default function RecallArena() {
 
   const correct = results.filter(r => r.result === 'correct').length;
   const failed  = results.filter(r => r.result === 'incorrect').length;
+
+  const cardData = current ? (flipped ? getBack(current) : getFront(current)) : null;
 
   return (
     <div className="space-y-4">
@@ -96,7 +145,7 @@ export default function RecallArena() {
             onSwipeRight={() => handleResult('correct', 4)}
           >
             <motion.div
-              className="rounded-2xl border border-white/10 overflow-hidden"
+              className="rounded-2xl border border-white/10 overflow-hidden cursor-pointer"
               onClick={() => setFlipped(f => !f)}
               style={{ perspective: 1000 }}
             >
@@ -107,20 +156,35 @@ export default function RecallArena() {
                   animate={{ rotateY: 0, opacity: 1 }}
                   exit={{ rotateY: flipped ? 90 : -90, opacity: 0 }}
                   transition={{ duration: 0.25 }}
-                  className={`p-6 min-h-[180px] flex flex-col items-center justify-center text-center
+                  className={`p-6 min-h-[200px] flex flex-col items-center justify-center text-center space-y-2
                     ${flipped
                       ? 'bg-gradient-to-br from-purple-900/30 to-slate-900'
                       : 'bg-gradient-to-br from-slate-900 to-slate-800'
                     }`}
                 >
-                  <p className="text-xs font-medium mb-3 uppercase tracking-widest text-slate-500">
-                    {flipped ? getBack(current).label : getFront(current).label}
+                  <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                    {cardData.label}
                   </p>
-                  <p className="text-white text-3xl font-bold">
-                    {flipped ? getBack(current).text : getFront(current).text}
-                  </p>
+
+                  <div className="flex items-center gap-2 flex-wrap justify-center">
+                    <p className="text-white text-2xl md:text-3xl font-bold">
+                      {cardData.text}
+                    </p>
+                    {cardData.pos && (
+                      <span className="text-[10px] text-purple-300 font-semibold bg-purple-500/20 border border-purple-500/30 rounded px-1.5 py-0.5">
+                        {cardData.pos}
+                      </span>
+                    )}
+                  </div>
+
+                  {cardData.subtext && (
+                    <p className="text-slate-300 text-xs max-w-md px-2 leading-relaxed bg-white/5 border border-white/5 rounded-xl py-1.5">
+                      {cardData.subtext}
+                    </p>
+                  )}
+
                   {!flipped && (
-                    <p className="text-slate-600 text-xs mt-4">Tap to reveal • Swipe to judge</p>
+                    <p className="text-slate-500 text-[11px] pt-2">Tap to reveal • Swipe to judge</p>
                   )}
                 </motion.div>
               </AnimatePresence>
