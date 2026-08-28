@@ -6,8 +6,10 @@
 // Works seamlessly in Netlify serverless environment with zero heavy dependencies.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PRIMARY_MODEL  = 'openai/gpt-4.1';
-const FALLBACK_MODEL = 'google/gemini-2.5-pro';
+// Primary: Gemini 2.5 Flash — 1M context window, cheap, fast, great for Bengali
+// Fallback: GPT-4.1 — high quality, 1M context
+const PRIMARY_MODEL  = 'google/gemini-2.5-flash';
+const FALLBACK_MODEL = 'openai/gpt-4.1';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const CORS = {
@@ -17,7 +19,7 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 
-async function callOpenRouter(apiKey, messages, maxTokens = 1800) {
+async function callOpenRouter(apiKey, messages, maxTokens = 2500) {
   const tryModel = async (model) => {
     const res = await fetch(OPENROUTER_URL, {
       method: 'POST',
@@ -91,7 +93,7 @@ export const handler = async (event) => {
       };
     }
 
-    const { messages, maxTokens = 1800 } = payload;
+    const { messages, maxTokens = 2500 } = payload;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return {
         statusCode: 400,

@@ -76,7 +76,7 @@ function TypingIndicator() {
   );
 }
 
-export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAnalysisText, initialMessages = [], activeMemories = [] }) {
+export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAnalysisText, initialMessages = [], activeMemories = [], activeGuidelines = [] }) {
   const [messages,  setMessages]  = useState(initialMessages);
   const [input,     setInput]     = useState('');
   const [sending,   setSending]   = useState(false);
@@ -132,8 +132,9 @@ export function MentorChat({ userId, usage, onUsageUpdate, fullContext, todayAna
 
     try {
       const contextSummary = buildChatContextSummary(fullContext, todayAnalysisText);
-      const data = await sendChatMessage(userId, text, messages, contextSummary, activeMemories);
+      const data = await sendChatMessage(userId, text, messages, contextSummary, activeMemories, activeGuidelines);
       setMessages(prev => [...prev, { role: 'assistant', content: data.response, timestamp: data.timestamp }]);
+
       onUsageUpdate({ ...usage, questionsUsed: data.questionsUsed, dailyLimit: data.dailyLimit, limitSet: true });
     } catch (e) {
       if (e.status === 429 || e.message?.includes('limit')) {

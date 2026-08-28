@@ -127,8 +127,9 @@ export default function AIMentorPage() {
     return () => unsub();
   }, [uid]);
 
-  // Only active memories for AI context injection
-  const activeMemories = memories.filter(m => m.active !== false);
+  // Separate active memories from guidelines by type field
+  const activeMemories   = memories.filter(m => m.active !== false && m.type !== 'guideline');
+  const activeGuidelines = memories.filter(m => m.active !== false && m.type === 'guideline');
 
   const today = getBSTDateString();
 
@@ -352,6 +353,7 @@ export default function AIMentorPage() {
                 todayAnalysisText={analysis?.text || null}
                 initialMessages={todayMessages}
                 activeMemories={activeMemories}
+                activeGuidelines={activeGuidelines}
               />
             </div>
           )}

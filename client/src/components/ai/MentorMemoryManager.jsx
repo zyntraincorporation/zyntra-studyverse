@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Brain, Plus, Edit3, Trash2, ToggleLeft, ToggleRight,
   X, Save, AlertTriangle, Loader, ChevronDown, ChevronUp,
-  Info, Zap,
+  Info, Zap, BookOpen,
 } from 'lucide-react';
 import {
   addMentorMemory, updateMentorMemory, deleteMentorMemory,
@@ -15,10 +15,12 @@ import {
 // These are injected into every AI request as Layer 3 context
 // ─────────────────────────────────────────────────────────────────────────────
 
-const MAX_MEMORY_CONTENT_CHARS = 800;
-const MAX_MEMORY_TITLE_CHARS   = 80;
-const MAX_TOTAL_CHARS          = 4000;
-const WARN_THRESHOLD           = 0.80; // warn at 80% of total limit
+const MAX_MEMORY_CONTENT_CHARS    = 800;
+const MAX_GUIDELINE_CONTENT_CHARS = 2000;
+const MAX_MEMORY_TITLE_CHARS      = 80;
+const MAX_TOTAL_CHARS             = 4000;  // memory total
+const MAX_GUIDELINE_TOTAL_CHARS   = 12000; // guideline total
+const WARN_THRESHOLD              = 0.80;  // warn at 80% of total limit
 
 function formatTimestamp(firestoreTs) {
   if (!firestoreTs) return '';
@@ -32,12 +34,12 @@ function formatTimestamp(firestoreTs) {
 }
 
 // ── Context size meter ────────────────────────────────────────────────────────
-function ContextMeter({ memories }) {
+function ContextMeter({ memories, maxChars = MAX_TOTAL_CHARS, label = 'memories' }) {
   const active    = memories.filter(m => m.active);
   const totalChars = active.reduce((s, m) => s + (m.content?.length || 0) + (m.title?.length || 0), 0);
-  const pct        = Math.min(100, Math.round((totalChars / MAX_TOTAL_CHARS) * 100));
-  const isWarn     = totalChars / MAX_TOTAL_CHARS >= WARN_THRESHOLD;
-  const isMax      = totalChars >= MAX_TOTAL_CHARS;
+  const pct        = Math.min(100, Math.round((totalChars / maxChars) * 100));
+  const isWarn     = totalChars / maxChars >= WARN_THRESHOLD;
+  const isMax      = totalChars >= maxChars;
 
   return (
     <div className="bg-white/[0.025] border border-white/[0.06] rounded-xl px-4 py-3 mb-4">
@@ -50,7 +52,7 @@ function ContextMeter({ memories }) {
           isWarn ? 'text-amber-400' :
                    'text-slate-400'
         }`}>
-          {totalChars.toLocaleString()} / {MAX_TOTAL_CHARS.toLocaleString()} chars
+          {totalChars.toLocaleString()} / {maxChars.toLocaleString()} chars
         </span>
       </div>
       <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
@@ -67,7 +69,7 @@ function ContextMeter({ memories }) {
       </div>
       <div className="flex items-center justify-between mt-1.5">
         <span className="text-[10px] text-slate-600">
-          {active.length} active memor{active.length === 1 ? 'y' : 'ies'}
+          {active.length} active {label}
         </span>
         {isWarn && (
           <span className={`text-[10px] flex items-center gap-1 ${isMax ? 'text-red-400' : 'text-amber-400'}`}>
@@ -166,20 +168,31 @@ function DeleteConfirmModal({ memory, onConfirm, onCancel, deleting }) {
 }
 
 // ── Add / Edit Modal ──────────────────────────────────────────────────────────
-function MemoryFormModal({ memory, onSave, onClose, saving }) {
-  const isEdit = !!memory?.id;
+function MemoryFormModal({ memory, onSave, onClose, saving, isGuideline = false }) {
+  const isEdit     = !!memory?.id;
+  const maxContent = isGuideline ? MAX_GUIDELINE_CONTENT_CHARS : MAX_MEMORY_CONTENT_CHARS;
   const [title,   setTitle]   = useState(memory?.title   || '');
   const [content, setContent] = useState(memory?.content || '');
   const [active,  setActive]  = useState(memory?.active  !== false);
 
   const contentLen = content.length;
-  const contentOk  = contentLen > 0 && contentLen <= MAX_MEMORY_CONTENT_CHARS;
+  const contentOk  = contentLen > 0 && contentLen <= maxContent;
   const titleOk    = title.length <= MAX_MEMORY_TITLE_CHARS;
 
   const handleSave = () => {
     if (!contentOk || !titleOk || saving) return;
     onSave({ title: title.trim(), content: content.trim(), active });
   };
+
+  const accentClass = isGuideline
+    ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+    : 'border-violet-500/40 bg-white/[0.06]';
+  const iconBg = isGuideline
+    ? 'bg-emerald-500/20 border-emerald-500/25'
+    : 'bg-violet-500/20 border-violet-500/25';
+  const btnClass = isGuideline
+    ? 'from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500'
+    : 'from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500';
 
   return (
     <motion.div
@@ -201,12 +214,15 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
         {/* Modal header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-violet-500/20 border border-violet-500/25
-                            flex items-center justify-center">
-              <Brain size={14} className="text-violet-400" />
+            <div className={`w-7 h-7 rounded-lg ${iconBg} flex items-center justify-center`}>
+              {isGuideline
+                ? <BookOpen size={14} className="text-emerald-400" />
+                : <Brain size={14} className="text-violet-400" />}
             </div>
             <h3 className="text-white font-semibold text-sm">
-              {isEdit ? 'Edit Memory' : 'Add Memory'}
+              {isEdit
+                ? (isGuideline ? 'Edit Guideline' : 'Edit Memory')
+                : (isGuideline ? 'Add Study Guideline' : 'Add Memory')}
             </h3>
           </div>
           <button onClick={onClose} disabled={saving}
@@ -215,6 +231,15 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
             <X size={16} />
           </button>
         </div>
+
+        {isGuideline && (
+          <div className="mx-5 mt-4 flex items-start gap-2 p-3 rounded-xl bg-emerald-500/[0.05] border border-emerald-500/20">
+            <Info size={12} className="text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Guidelines are <span className="text-emerald-300 font-medium">high-priority rules</span> for the AI — study strategies, video notes, preparation methods. AI will always follow these when advising you. Max {maxContent} chars.
+            </p>
+          </div>
+        )}
 
         <div className="p-5 space-y-4">
           {/* Title */}
@@ -226,10 +251,12 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value.slice(0, MAX_MEMORY_TITLE_CHARS))}
-              placeholder='e.g. "Current Physics Problem", "Exam Dates"'
-              className="w-full bg-white/[0.04] border border-white/[0.09] rounded-xl px-4 py-2.5 text-sm
-                         text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/40
-                         focus:bg-white/[0.06] transition-all"
+              placeholder={isGuideline
+                ? 'e.g. "BUET Preparation Strategy", "Physics Study Method"'
+                : 'e.g. "Current Physics Problem", "Exam Dates"'}
+              className={`w-full bg-white/[0.04] border border-white/[0.09] rounded-xl px-4 py-2.5 text-sm
+                         text-white placeholder-slate-600 focus:outline-none focus:${accentClass}
+                         transition-all`}
             />
             {title.length > MAX_MEMORY_TITLE_CHARS - 10 && (
               <p className="text-[10px] text-amber-500 mt-1">
@@ -245,25 +272,25 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
             </label>
             <textarea
               value={content}
-              onChange={e => setContent(e.target.value.slice(0, MAX_MEMORY_CONTENT_CHARS))}
-              placeholder={
-                'e.g. My HSC preparation deadline is December 31, 2026.\n' +
-                'HSC exam starts March 2027.\n' +
-                'I am currently struggling with Physics numericals...'
-              }
-              rows={6}
+              onChange={e => setContent(e.target.value.slice(0, maxContent))}
+              placeholder={isGuideline
+                ? 'e.g. BUET Reality:\n- 10,000 shortlist থেকে 600 নম্বর written\n- Physics=Chemistry=Math সমান নম্বর\n- Chapter difficulty: Physics Ch4,8,9...\n\nPreparation Strategy:\nStep 1 → Concept clear...'
+                : 'e.g. My HSC preparation deadline is December 31, 2026.\nHSC exam starts March 2027.\nI am currently struggling with Physics numericals...'}
+              rows={isGuideline ? 10 : 6}
               className="w-full bg-white/[0.04] border border-white/[0.09] rounded-xl px-4 py-3 text-sm
                          text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/40
                          focus:bg-white/[0.06] transition-all resize-none leading-relaxed"
             />
             <div className="flex items-center justify-between mt-1">
               <p className="text-[10px] text-slate-600">
-                AI Mentor will always read this when you chat or generate analysis
+                {isGuideline
+                  ? 'AI will follow these rules in every response'
+                  : 'AI Mentor will always read this when you chat or generate analysis'}
               </p>
               <span className={`text-[10px] font-medium ${
-                contentLen > MAX_MEMORY_CONTENT_CHARS * 0.9 ? 'text-amber-400' : 'text-slate-600'
+                contentLen > maxContent * 0.9 ? 'text-amber-400' : 'text-slate-600'
               }`}>
-                {contentLen} / {MAX_MEMORY_CONTENT_CHARS}
+                {contentLen} / {maxContent}
               </span>
             </div>
           </div>
@@ -274,7 +301,7 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
             <div>
               <p className="text-sm text-white font-medium">Active</p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Inactive memories are saved but not sent to AI
+                Inactive {isGuideline ? 'guidelines' : 'memories'} are saved but not sent to AI
               </p>
             </div>
             <button
@@ -304,15 +331,14 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
           <button
             onClick={handleSave}
             disabled={!contentOk || !titleOk || saving}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600
-                       hover:from-violet-400 hover:to-purple-500 disabled:opacity-40
+            className={`flex-1 py-2.5 rounded-xl bg-gradient-to-r ${btnClass} disabled:opacity-40
                        disabled:cursor-not-allowed text-white text-sm font-medium
-                       flex items-center justify-center gap-2 transition-all"
+                       flex items-center justify-center gap-2 transition-all`}
           >
             {saving ? (
               <><Loader size={14} className="animate-spin" /> Saving…</>
             ) : (
-              <><Save size={14} /> {isEdit ? 'Save Changes' : 'Add Memory'}</>
+              <><Save size={14} /> {isEdit ? 'Save Changes' : (isGuideline ? 'Add Guideline' : 'Add Memory')}</>
             )}
           </button>
         </div>
@@ -320,6 +346,7 @@ function MemoryFormModal({ memory, onSave, onClose, saving }) {
     </motion.div>
   );
 }
+
 
 // ── Single memory card ────────────────────────────────────────────────────────
 function MemoryCard({ memory, onEdit, onDelete, onToggle, idx, toggling }) {
@@ -432,13 +459,21 @@ function MemoryCard({ memory, onEdit, onDelete, onToggle, idx, toggling }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function MentorMemoryManager({ userId, memories = [] }) {
-  const [showForm,    setShowForm]    = useState(false);
-  const [editMemory,  setEditMemory]  = useState(null);  // null = add mode
-  const [deleteTarget,setDeleteTarget]= useState(null);
-  const [saving,      setSaving]      = useState(false);
-  const [deleting,    setDeleting]    = useState(false);
-  const [toggling,    setToggling]    = useState('');     // id of memory being toggled
-  const [error,       setError]       = useState('');
+  const [activeSection, setActiveSection] = useState('memory'); // 'memory' | 'guideline'
+  const [showForm,      setShowForm]      = useState(false);
+  const [editMemory,    setEditMemory]    = useState(null);
+  const [deleteTarget,  setDeleteTarget]  = useState(null);
+  const [saving,        setSaving]        = useState(false);
+  const [deleting,      setDeleting]      = useState(false);
+  const [toggling,      setToggling]      = useState('');
+  const [error,         setError]         = useState('');
+
+  const isGuideline = activeSection === 'guideline';
+
+  // Split memories and guidelines
+  const memoryItems    = memories.filter(m => m.type !== 'guideline');
+  const guidelineItems = memories.filter(m => m.type === 'guideline');
+  const currentItems   = isGuideline ? guidelineItems : memoryItems;
 
   const handleAdd = () => {
     setEditMemory(null);
@@ -460,7 +495,8 @@ export function MentorMemoryManager({ userId, memories = [] }) {
       if (editMemory?.id) {
         await updateMentorMemory(userId, editMemory.id, { title, content, active });
       } else {
-        await addMentorMemory(userId, { title, content, active });
+        // Pass type based on current tab
+        await addMentorMemory(userId, { title, content, active, type: activeSection });
       }
       setShowForm(false);
       setEditMemory(null);
@@ -503,38 +539,99 @@ export function MentorMemoryManager({ userId, memories = [] }) {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2.5 mb-1">
-            <div className="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/25
-                            flex items-center justify-center">
-              <Brain size={16} className="text-violet-400" />
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+              isGuideline
+                ? 'bg-emerald-500/20 border border-emerald-500/25'
+                : 'bg-violet-500/20 border border-violet-500/25'
+            }`}>
+              {isGuideline
+                ? <BookOpen size={16} className="text-emerald-400" />
+                : <Brain size={16} className="text-violet-400" />}
             </div>
-            <h2 className="text-base font-bold text-white">Memory / Custom Instructions</h2>
+            <h2 className="text-base font-bold text-white">
+              {isGuideline ? 'Study Guidelines' : 'Memory / Custom Instructions'}
+            </h2>
           </div>
-          <p className="text-[12px] text-slate-500 leading-relaxed ml-10.5 pl-px">
-            Information you want your AI Mentor to always remember and consider.
+          <p className="text-[12px] text-slate-500 leading-relaxed ml-[42px]">
+            {isGuideline
+              ? 'Your study strategies & rules — AI follows these with high priority.'
+              : 'Information you want your AI Mentor to always remember and consider.'}
           </p>
         </div>
         <button
           onClick={handleAdd}
-          className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl
-                     bg-violet-500/15 border border-violet-500/30 text-violet-300 text-xs font-medium
-                     hover:bg-violet-500/25 hover:border-violet-400/40 transition-all"
+          className={`shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl
+                     text-xs font-medium transition-all ${
+            isGuideline
+              ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 hover:border-emerald-400/40'
+              : 'bg-violet-500/15 border border-violet-500/30 text-violet-300 hover:bg-violet-500/25 hover:border-violet-400/40'
+          }`}
         >
-          <Plus size={13} /> Add Memory
+          <Plus size={13} /> {isGuideline ? 'Add Guideline' : 'Add Memory'}
+        </button>
+      </div>
+
+      {/* Memory ↔ Guidelines tabs */}
+      <div className="flex gap-1 p-1 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+        <button
+          onClick={() => { setActiveSection('memory'); setShowForm(false); }}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
+            !isGuideline
+              ? 'bg-violet-500/20 border border-violet-500/30 text-violet-300'
+              : 'text-slate-500 hover:text-white'
+          }`}
+        >
+          <Brain size={13} />
+          Memories
+          {memoryItems.length > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+              !isGuideline ? 'bg-violet-500/30 text-violet-200' : 'bg-white/[0.08] text-slate-500'
+            }`}>{memoryItems.length}</span>
+          )}
+        </button>
+        <button
+          onClick={() => { setActiveSection('guideline'); setShowForm(false); }}
+          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all ${
+            isGuideline
+              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300'
+              : 'text-slate-500 hover:text-white'
+          }`}
+        >
+          <BookOpen size={13} />
+          Guidelines
+          {guidelineItems.length > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+              isGuideline ? 'bg-emerald-500/30 text-emerald-200' : 'bg-white/[0.08] text-slate-500'
+            }`}>{guidelineItems.length}</span>
+          )}
         </button>
       </div>
 
       {/* Context pipeline info banner */}
-      <div className="flex items-start gap-2.5 p-3 rounded-xl bg-cyan-500/[0.05]
-                      border border-cyan-500/[0.12]">
-        <Info size={13} className="text-cyan-500/70 shrink-0 mt-0.5" />
+      <div className={`flex items-start gap-2.5 p-3 rounded-xl border ${
+        isGuideline
+          ? 'bg-emerald-500/[0.04] border-emerald-500/[0.12]'
+          : 'bg-cyan-500/[0.05] border-cyan-500/[0.12]'
+      }`}>
+        <Info size={13} className={`shrink-0 mt-0.5 ${isGuideline ? 'text-emerald-500/70' : 'text-cyan-500/70'}`} />
         <p className="text-[11px] text-slate-500 leading-relaxed">
-          <span className="text-slate-400 font-medium">How it works:</span>{' '}
-          Fixed System Prompt → Live Academic Data → <span className="text-violet-400 font-medium">Your Active Memories</span> → Your Message → AI
+          <span className="text-slate-400 font-medium">Priority order: </span>
+          Fixed Prompt → DB Data →{' '}
+          <span className="text-emerald-400 font-medium">Guidelines (HIGH)</span>
+          {' → '}
+          <span className="text-violet-400 font-medium">Memories</span>
+          {' → Message → AI'}
         </p>
       </div>
 
       {/* Context usage meter */}
-      {memories.length > 0 && <ContextMeter memories={memories} />}
+      {currentItems.length > 0 && (
+        <ContextMeter
+          memories={currentItems}
+          maxChars={isGuideline ? MAX_GUIDELINE_TOTAL_CHARS : MAX_TOTAL_CHARS}
+          label={isGuideline ? 'guidelines' : 'memories'}
+        />
+      )}
 
       {/* Error banner */}
       <AnimatePresence>
@@ -555,23 +652,58 @@ export function MentorMemoryManager({ userId, memories = [] }) {
         )}
       </AnimatePresence>
 
-      {/* Memory list or empty state */}
-      {memories.length === 0 ? (
-        <EmptyState onAdd={handleAdd} />
+      {/* List or empty state */}
+      {currentItems.length === 0 ? (
+        <motion.div
+          key={activeSection}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center py-14 text-center"
+        >
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-4 ${
+            isGuideline
+              ? 'bg-emerald-500/10 border border-emerald-500/20'
+              : 'bg-violet-500/10 border border-violet-500/20'
+          }`}>
+            {isGuideline
+              ? <BookOpen size={24} className="text-emerald-400" />
+              : <Brain size={24} className="text-violet-400" />}
+          </div>
+          <h3 className="text-white font-semibold mb-2">
+            {isGuideline ? 'No Guidelines Yet' : 'No Memories Yet'}
+          </h3>
+          <p className="text-slate-500 text-sm max-w-xs mb-5 leading-relaxed">
+            {isGuideline
+              ? 'Add BUET preparation strategies, chapter difficulty notes, or study methods from guideline videos.'
+              : 'Exam dates, current weaknesses, study strategies — AI Mentor সব মনে রাখবে। তুমি manually add করো, AI শুধু read করে।'}
+          </p>
+          <button
+            onClick={handleAdd}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl
+                       text-white font-medium text-sm transition-all ${
+              isGuideline
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500'
+                : 'bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500'
+            }`}
+          >
+            <Plus size={15} />
+            {isGuideline ? 'Add First Guideline' : 'Add First Memory'}
+          </button>
+        </motion.div>
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between px-0.5">
             <p className="text-[11px] text-slate-600 uppercase tracking-wide font-medium">
-              All Memories ({memories.length})
+              {isGuideline ? `All Guidelines (${currentItems.length})` : `All Memories (${currentItems.length})`}
             </p>
             <span className="text-[10px] text-slate-600 flex items-center gap-1">
-              <Zap size={9} className="text-violet-500" />
-              {memories.filter(m => m.active).length} active → sent to AI
+              <Zap size={9} className={isGuideline ? 'text-emerald-500' : 'text-violet-500'} />
+              {currentItems.filter(m => m.active).length} active → sent to AI
             </span>
           </div>
 
           <AnimatePresence mode="popLayout">
-            {memories.map((mem, i) => (
+            {currentItems.map((mem, i) => (
               <MemoryCard
                 key={mem.id}
                 memory={mem}
@@ -594,6 +726,7 @@ export function MentorMemoryManager({ userId, memories = [] }) {
             onSave={handleSave}
             onClose={() => { setShowForm(false); setEditMemory(null); }}
             saving={saving}
+            isGuideline={isGuideline}
           />
         )}
       </AnimatePresence>
@@ -612,3 +745,4 @@ export function MentorMemoryManager({ userId, memories = [] }) {
     </div>
   );
 }
+

@@ -2291,24 +2291,27 @@ export async function getBuetChallengeStats(uid) {
 
 const mentorMemoriesCol = (uid) => collection(db, 'users', uid, 'aiMentorMemories');
 
-/** Add a new memory */
-export async function addMentorMemory(userId, { title = '', content, active = true }) {
+/** Add a new memory or guideline
+ *  type: 'memory' (default) | 'guideline'
+ */
+export async function addMentorMemory(userId, { title = '', content, active = true, type = 'memory' }) {
   if (!userId) throw new Error('User ID required');
   if (!content?.trim()) throw new Error('Content is required');
   const docRef = await addDoc(mentorMemoriesCol(userId), {
     title:     title.trim(),
     content:   content.trim(),
     active:    !!active,
+    type:      type === 'guideline' ? 'guideline' : 'memory',
     createdAt: now(),
     updatedAt: now(),
   });
   return docRef.id;
 }
 
-/** Update an existing memory (title, content, and/or active flag) */
+/** Update an existing memory (title, content, active, type) */
 export async function updateMentorMemory(userId, memoryId, updates) {
   if (!userId || !memoryId) throw new Error('userId and memoryId required');
-  const allowed  = ['title', 'content', 'active'];
+  const allowed  = ['title', 'content', 'active', 'type'];
   const filtered = Object.fromEntries(
     Object.entries(updates).filter(([k]) => allowed.includes(k))
   );
