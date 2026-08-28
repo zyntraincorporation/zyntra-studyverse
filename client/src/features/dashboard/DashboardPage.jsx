@@ -722,89 +722,51 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* SECTION 4 — STREAK  +  VOCABULARY                            */}
+        {/* SECTION 4 — DAILY STREAK                                      */}
         {/* ═══════════════════════════════════════════════════════════════ */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.14 }}
+          className="rounded-2xl border border-orange-500/18 p-5"
+          style={{ background: 'linear-gradient(145deg, rgba(50,16,2,0.65) 0%, rgba(10,14,26,0.97) 60%)' }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Flame size={14} className="text-orange-400" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-white/25">Daily Streak</span>
+            </div>
+            {streak >= 7 && (
+              <span className="text-[10px] bg-orange-500/12 text-orange-300 border border-orange-500/18 rounded-full px-2 py-0.5 font-bold">
+                🏆 Week Champion
+              </span>
+            )}
+          </div>
 
-          {/* Streak */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.14 }}
-            className="rounded-2xl border border-orange-500/18 p-5"
-            style={{ background: 'linear-gradient(145deg, rgba(50,16,2,0.65) 0%, rgba(10,14,26,0.97) 60%)' }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Flame size={14} className="text-orange-400" />
-                <span className="text-[11px] font-bold uppercase tracking-widest text-white/25">Daily Streak</span>
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-5xl font-black text-orange-400 tabular-nums leading-none">{streak}</span>
+                <span className="text-base text-orange-600/60 font-bold mb-0.5">days</span>
               </div>
-              {streak >= 7 && (
-                <span className="text-[10px] bg-orange-500/12 text-orange-300 border border-orange-500/18 rounded-full px-2 py-0.5 font-bold">
-                  🏆 Week Champion
-                </span>
+              <p className="text-xs text-white/25 mt-1.5">
+                {streak === 0 ? 'Start your streak today!' : streak === 1 ? 'First day — keep it up! 🔥' : 'Consecutive study days 💪'}
+              </p>
+              {bestStreak > streak && (
+                <p className="text-[10px] text-white/20 mt-1">Best ever: {bestStreak} days</p>
               )}
             </div>
-
-            <div className="flex items-end justify-between">
-              <div>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-5xl font-black text-orange-400 tabular-nums leading-none">{streak}</span>
-                  <span className="text-base text-orange-600/60 font-bold mb-0.5">days</span>
-                </div>
-                <p className="text-xs text-white/25 mt-1.5">
-                  {streak === 0 ? 'Start your streak today!' : streak === 1 ? 'First day — keep it up! 🔥' : 'Consecutive study days 💪'}
-                </p>
-                {bestStreak > streak && (
-                  <p className="text-[10px] text-white/20 mt-1">Best ever: {bestStreak} days</p>
-                )}
-              </div>
-              <div className="flex gap-0.5 items-end pb-1">
-                {[...Array(Math.min(Math.max(streak, 0), 7))].map((_, i) => (
-                  <span
-                    key={i}
-                    className="text-xl leading-none"
-                    style={{ opacity: 0.3 + (i / Math.max(Math.min(streak, 7), 1)) * 0.7 }}
-                  >🔥</span>
-                ))}
-                {streak === 0 && <span className="text-2xl opacity-20">🔥</span>}
-              </div>
+            <div className="flex gap-0.5 items-end pb-1">
+              {[...Array(Math.min(Math.max(streak, 0), 7))].map((_, i) => (
+                <span
+                  key={i}
+                  className="text-xl leading-none"
+                  style={{ opacity: 0.3 + (i / Math.max(Math.min(streak, 7), 1)) * 0.7 }}
+                >🔥</span>
+              ))}
+              {streak === 0 && <span className="text-2xl opacity-20">🔥</span>}
             </div>
-          </motion.div>
-
-          {/* Vocabulary */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.16 }}
-            className="rounded-2xl border border-violet-500/18 p-5 cursor-pointer hover:border-violet-500/35 transition-all"
-            style={{ background: 'linear-gradient(145deg, rgba(24,6,50,0.60) 0%, rgba(10,14,26,0.97) 60%)' }}
-            onClick={() => navigate('/vocabulary')}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <BookOpen size={14} className="text-violet-400" />
-                <span className="text-[11px] font-bold uppercase tracking-widest text-white/25">Today's Vocabulary</span>
-              </div>
-              {vocabCount >= vocabThreshold && (
-                <span className="text-[10px] bg-green-500/12 text-green-300 border border-green-500/18 rounded-full px-2 py-0.5 font-bold">
-                  ✓ Done
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-end gap-2 mb-4">
-              <span className="text-5xl font-black text-violet-300 tabular-nums leading-none">{vocabCount}</span>
-              <span className="text-xl text-violet-600/50 font-bold mb-0.5">/ {vocabThreshold}</span>
-            </div>
-
-            <ProgressBar pct={vocabPct} color="linear-gradient(90deg, #5b21b6, #8b5cf6, #a78bfa)" height="h-2.5" />
-
-            <p className="text-[10px] text-white/20 mt-2">
-              {vocabCount >= vocabThreshold
-                ? '🎉 All done for today — chat may be unlocked!'
-                : `${vocabThreshold - vocabCount} words remaining · Tap to study`}
-            </p>
-          </motion.div>
-        </div>
+          </div>
+        </motion.div>
 
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* SECTION 5 — TODAY'S TARGETS (from Routine — source of truth)  */}
