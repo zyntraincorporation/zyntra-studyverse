@@ -2330,30 +2330,46 @@ export async function deleteMentorMemory(userId, memoryId) {
 /** Fetch ALL memories (active + disabled) — for the Memory Manager UI */
 export async function getMentorMemories(userId) {
   if (!userId) return [];
-  const q    = query(mentorMemoriesCol(userId), orderBy('createdAt', 'desc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  try {
+    const q = query(mentorMemoriesCol(userId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  } catch (e) {
+    console.warn('[db] getMentorMemories error:', e);
+    return [];
+  }
 }
 
 /** Fetch only ACTIVE memories — used when building the AI prompt context */
 export async function getActiveMentorMemories(userId) {
   if (!userId) return [];
-  const q = query(
-    mentorMemoriesCol(userId),
-    where('active', '==', true),
-    orderBy('createdAt', 'desc')
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  try {
+    const q = query(mentorMemoriesCol(userId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(d => d.active !== false)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  } catch (e) {
+    console.warn('[db] getActiveMentorMemories error:', e);
+    return [];
+  }
 }
 
 /** Real-time subscription to ALL memories — drives the Memory Manager UI */
 export function subscribeToMentorMemories(userId, callback, onError) {
   if (!userId) return () => {};
-  const q = query(mentorMemoriesCol(userId), orderBy('createdAt', 'desc'));
+  const q = query(mentorMemoriesCol(userId));
   return onSnapshot(
     q,
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    snap => {
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      callback(list);
+    },
     onError || console.error
   );
 }
