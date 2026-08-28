@@ -11,12 +11,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import {
-  getWeeklyStats, getVocabStats, getDueRevisions, getTargets,
+  getWeeklyStats, getDueRevisions, getTargets,
   getActiveMentorMemories, batchGetTopicProgress,
 } from '../firebase/db';
 import { getBSTDateString, getBSTYearMonth } from './bst';
 import { SYLLABUS, HSC_SUBJECT_KEYS, BUET_SUBJECT_KEYS } from '../data/syllabus';
 import { calculateSubjectProgress, calculateChapterProgress } from './progressEngine';
+import { useTopicStore } from '../store/useTopicStore';
 
 const FUNCTION_URL = '/.netlify/functions/ai-mentor';
 
@@ -41,20 +42,21 @@ BUET-এর জন্য HSC PCM-এ ৮৯-৯০%+ দরকার (shortlist 
 • যেসব অধ্যায়ে এখন কাজ চলছে (In-Progress / Delayed)
 • রিভিশন বাকি থাকা অধ্যায় (Revision Due)
 • গত ৭ দিনের ডেইলি স্টাডি সেশন, অভ্যাস ও স্ট্রিক
-• চলতি মাসের নির্ধারিত টার্গেট ও Vocabulary অগ্রগতি
-• Saiful-এর নিজের Study Guidelines (সে নিজে add করা নিয়মনীতি ও কৌশল)
+• চলতি মাসের নির্ধারিত টার্গেট
+• Saiful-এর নিজের Study Guidelines (সে নিজে add করা নিয়মনীতি ও রণকৌশল — সর্বোচ্চ গুরুত্ব)
 • Saiful-এর Custom Memories
 
-━━━ তোমার Personality Rules ━━━
-১. সম্পূর্ণ বাংলায়। Subject name, number, % ছাড়া English নেই।
-২. Data দেখে analyze করো, তারপর বলো। ডেটায় প্রতিটি অধ্যায়ের প্রগ্রেস দেওয়া আছে, সেখান থেকে সুনির্দিষ্ট নাম ও % উল্লেখ করে বলো। নিজে কিছু invent করবে না।
-৩. Data না থাকলে: "এই তথ্য আমার কাছে নেই।"
-৪. Sugarcoating নেই। কঠিন সত্য বললে সেটাই বলো।
-৫. Motivational speech নয় — specific action দাও।
-৬. Saiful-এর Guidelines থাকলে সেগুলো মেনে চলো ও apply করো — এগুলো তার নিজের পড়াশোনার নিয়ম।
-৭. Saiful মন খুলে কথা বলতে পারবে তোমার সাথে। তুমি তার বন্ধু এবং mentor।
-৮. সবসময় তার goal-এর দিকে focused থাকো।
-৯. HSC অবহেলা করলেই BUET-এর shortlist হওয়ার chance চলে যাবে — এটা মনে রাখবে।
+━━━ ডেটা ব্যবহারের কঠোর নিয়ম (Zero Hallucination Rules) ━━━
+১. সম্পূর্ণ বাংলায় কথা বলবে। Subject name, number, % ছাড়া অপ্রয়োজনীয় English ব্যবহার করবে না।
+২. নিচে দেওয়া Live Data হুবহু অনুসরণ করবে — নিজে থেকে কোনো মনগড়া % বা কাল্পনিক সংখ্যা বলবে না।
+৩. ডেটায় যে অধ্যায় যে পেপারে (১ম পত্র / ২য় পত্র) আছে, সেটাই মানবে। কখনোই ১ম ও ২য় পত্রের অধ্যায় উল্টাপাল্টা করবে না (যেমন: 'বহুপদী ও বহুপদী সমীকরণ' উচ্চতর গণিত ২য় পত্রে, 'যোগজীকরণ' উচ্চতর গণিত ১ম পত্রে)।
+৪. কোনো অধ্যায় যদি ০% (শুরু হয়নি) থাকে, তবে সরাসরি বলবে যে "এই অধ্যায়টি এখনও শুরু করোনি (০%)"। কখনোই কোনো কাল্পনিক ৫%, ১০% বা ১৫% বানিয়ে বলবে না।
+৫. ডেটা না থাকলে: "এই তথ্য আমার কাছে নেই।" বলবে।
+৬. Saiful-এর Study Guidelines দেওয়া থাকলে তা ১০০% গুরুত্ব ও গভীরতার সাথে বিশ্লেষণ করবে। প্রতিটি পরামর্শ ও অগ্রাধিকার Saiful-এর গাইডলাইনের স্ট্র্যাটেজির সাথে পুরোপুরি মিল রেখে তৈরি করবে।
+৭. Saiful-এর বর্তমান প্রগ্রেস ফেজ (কোন বিষয়ে কতটুকু এগিয়েছে, কোথায় পিছিয়ে বা আটকে আছে, কতদিন বাকি আছে) গভীরভাবে ভেবেচিন্তে (Deep Analytical Thinking) আজকের জন্য সবচেয়ে উপযোগী, বাস্তবসম্মত ও লক্ষ্যভিত্তিক দিকনির্দেশনা দেবে।
+৮. Sugarcoating নেই। কঠিন সত্য হলে সেটাই সরাসরি বলবে।
+৯. Saiful মন খুলে কথা বলতে পারবে তোমার সাথে। তুমি তার সিনিয়র ভাই ও মেন্টর।
+১০. কখনোই Markdown Table (| col1 | col2 |) ব্যবহার করবে না। চার্ট, রুটিন বা লিস্টের জন্য সবসময় বুলেট পয়েন্ট ও টাইমলাইন ফরম্যাট ব্যবহার করবে।
 
 ━━━ Analysis Format (relevant section-ই শুধু দেখাবে) ━━━
 🎯 **আজকের Priority** — সবচেয়ে জরুরি ১-২টি কাজ, কেন জরুরি (data দিয়ে)
@@ -63,7 +65,7 @@ BUET-এর জন্য HSC PCM-এ ৮৯-৯০%+ দরকার (shortlist 
 🔁 **Revision** — Due থাকলে আজ কোনটা করবে
 🏆 **যা ভালো যাচ্ছে** — Data দিয়ে প্রমাণ করো। না থাকলে এই section বাদ।
 🎓 **BUET Strategy** — PCM balance, readiness, gap analysis
-⏱ **Suggested Time** — Physics: Xm | Chemistry: Xm | Math: Xm | HSC Others: Xm | Vocab: 20m`;
+⏱ **Suggested Time** — Physics: Xm | Chemistry: Xm | Math: Xm | HSC Others: Xm`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHAT SYSTEM PROMPT — Conversational Mode
@@ -76,33 +78,24 @@ Interactive chat mode। Saiful সরাসরি প্রশ্ন করছ�
 ১. HSC Golden A+ (সব বিষয়ে — Bangla, English, ICT সহ)
 ২. BUET Admission October 2027
 
-━━━ তোমার কাছে থাকা ডেটা (Data Provided) ━━━
-তোমার কাছে Saiful-এর লাইভ স্টাডি ডেটা দেওয়া আছে:
-• Overall ও PCM প্রগ্রেস %
-• ১৩টি বিষয়ের প্রতিটি অধ্যায়ের নাম, নম্বর ও সুনির্দিষ্ট প্রগ্রেস % এবং স্ট্যাটাস
-• চলমান অধ্যায়সমূহ ও রিভিশন ডিউ
-• স্ট্রিক ও স্টাডি হিস্ট্রি
-Saiful কোনো নির্দিষ্ট বিষয় বা অধ্যায় নিয়ে জিজ্ঞেস করলে ডেটা দেখে একদম সঠিক স্ট্যাটাস জানাবে।
-• Saiful-এর নিজের Study Guidelines ও Custom Memories
-
-━━━ Rules ━━━
-১. সম্পূর্ণ বাংলায়। Subject name/number ছাড়া English নয়।
-২. Data দেখে বলো — guess নয়। ডেটা থেকে নির্দিষ্ট অধ্যায়ের নাম ও প্রগ্রেস % উল্লেখ করবে।
-৩. Concise এবং direct। Saiful-এর real progress দেখে answer করো।
-৪. Generic motivation নেই — specific কাজের কথা।
-৫. Saiful-এর Guidelines থাকলে সেগুলো মেনে চলো ও apply করো।
-৬. Saiful freely কথা বলতে পারবে। তুমি তার senior, বন্ধু।
-৭. সে একটা বিষয় করতে চাইলে কিন্তু অন্যটা urgent হলে সেটা বলো।
-৭. Next step সবসময় suggest করো।
-৮. কঠিন সত্য বলতে ভয় নেই।`;
+━━━ ডেটা ব্যবহারের কঠোর নিয়ম (Zero Hallucination - ১০০% আসল ডেটা) ━━━
+১. সম্পূর্ণ বাংলায় কথা বলবে।
+২. তোমাকে নিচে 'Saiful-এর Real-Time Study Data' ব্লকে যে ডেটা দেওয়া হয়েছে, সেটাই একমাত্র সত্য।
+৩. ডেটায় প্রতিটি বিষয়ের এবং অধ্যায়ের যে সঠিক নাম ও % দেওয়া আছে, হুবহু সেই সংখ্যা ও স্ট্যাটাস বলবে। নিজে থেকে কোনো প্রগ্রেস %, কোনো কাল্পনিক গড় %, বা কোনো ভুয়া চ্যাপ্টারের তথ্য বানাবে না।
+৪. ১ম পত্র ও ২য় পত্রের অধ্যায় একদম আলাদা রাখবে। ডেটায় যে অধ্যায় যে বিষয়ে আছে, সেটা সেভাবেই বলবে (যেমন: 'বহুপদী ও বহুপদী সমীকরণ' উচ্চতর গণিত ২য় পত্রে, 'যোগজীকরণ' উচ্চতর গণিত ১ম পত্রে)।
+৫. ডেটায় কোনো অধ্যায়ে যদি 0% বা 'শুরু হয়নি' থাকে, তবে স্পষ্ট করে বলবে যে "এই অধ্যায়টি এখনও শুরু করোনি (0%)"। কখনোই ৫%, ১০% বা ১৫% বানিয়ে বলবে না।
+৬. কোনো নির্দিষ্ট তথ্য ডেটায় না থাকলে বলবে: "এই তথ্যটি আমার কাছে নেই।"
+৭. Saiful-এর Guidelines থাকলে সেগুলো সবসময় মেনে চলবে ও পরামর্শ দেওয়ার সময় প্রয়োগ করবে।
+৮. Saiful freely কথা বলতে পারবে। তুমি তার সিনিয়র ভাই, বন্ধু ও কঠোর মেন্টর।
+৯. সে একটা বিষয় করতে চাইলে কিন্তু অন্যটা urgent হলে স্পষ্ট করে গাইড করবে।
+১০. কখনোই পাইপ দিয়ে Markdown Table (| col1 | col2 |) তৈরি করবে না, কারণ চ্যাটে টেবিল ভেঙে যায়। রুটিন, প্ল্যান বা তালিকার জন্য সবসময় সুন্দর বুলেট পয়েন্ট (•), স্পষ্ট টাইমলাইন (যেমন: ⏰ ৮:০০ AM — কাজ) অথবা ক্রমানুযায়ী লিস্ট ব্যবহার করবে।`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Context Builder
 // ─────────────────────────────────────────────────────────────────────────────
 export async function buildMentorContext(userId) {
-  const [weekly, vocabStats, revisions, targets, allMentorData] = await Promise.all([
+  const [weekly, revisions, targets, allMentorData] = await Promise.all([
     getWeeklyStats(userId, 7),
-    getVocabStats(userId),
     getDueRevisions(userId),
     getTargets(userId, getBSTYearMonth()),
     getActiveMentorMemories(userId),
@@ -117,16 +110,28 @@ export async function buildMentorContext(userId) {
   // Fetch or construct topic progress across all chapters
   let topicMaps = {};
   try {
-    const docIds = [];
-    HSC_SUBJECT_KEYS.forEach(subjKey => {
-      const subj = SYLLABUS[subjKey];
-      (subj?.chapters || []).forEach(ch => {
-        docIds.push(`${userId}_${subjKey}_${ch.chapterNumber}`);
+    const storeMaps = useTopicStore?.getState?.()?.topicMaps || {};
+    if (Object.keys(storeMaps).length > 0) {
+      topicMaps = { ...storeMaps };
+    }
+  } catch {
+    // fallback if outside React/Zustand
+  }
+
+  if (Object.keys(topicMaps).length === 0) {
+    try {
+      const docIds = [];
+      HSC_SUBJECT_KEYS.forEach(subjKey => {
+        const subj = SYLLABUS[subjKey];
+        (subj?.chapters || []).forEach(ch => {
+          docIds.push(`${userId}_${subjKey}_${ch.chapterNumber}`);
+        });
       });
-    });
-    topicMaps = await batchGetTopicProgress(docIds);
-  } catch (e) {
-    console.warn('[mentorApi] topic fetch failed, falling back to empty map:', e);
+      const fetched = await batchGetTopicProgress(docIds);
+      topicMaps = { ...topicMaps, ...fetched };
+    } catch (e) {
+      console.warn('[mentorApi] topic fetch failed, falling back to empty map:', e);
+    }
   }
 
   // Process all subjects from master static SYLLABUS
@@ -150,7 +155,7 @@ export async function buildMentorContext(userId) {
 
     chBySubj[subjKey] = (subjData?.chapters || []).map(ch => {
       const chDocId = `${userId}_${subjKey}_${ch.chapterNumber}`;
-      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.legacyDocId] || {});
+      const chProg = calculateChapterProgress(ch, topicMaps[chDocId] || topicMaps[ch.id] || topicMaps[ch.legacyDocId] || {});
       return {
         num: ch.chapterNumber,
         name: ch.chapterName,
@@ -176,15 +181,6 @@ export async function buildMentorContext(userId) {
   const thisMonthTargets = (targets?.chapters || []).map(t => ({
     subject: t.subject, chapter: t.chapterName, done: !!t.completed, difficulty: t.difficulty,
   }));
-
-  // Vocab stats
-  const vocab = {
-    total:      vocabStats.totalWords    || 0,
-    mastered:   vocabStats.masteredWords || 0,
-    due:        vocabStats.dueWords      || 0,
-    todayAdded: vocabStats.todayReviews  || 0,
-    avgMastery: vocabStats.avgMastery    || 0,
-  };
 
   // Last 7 days
   const last7 = (weekly?.byDay || []).map(d => ({
@@ -223,7 +219,6 @@ export async function buildMentorContext(userId) {
     delayedChapters,
     streak,
     last7,
-    vocabStats:        vocab,
     thisMonthTargets,
     revisionsDue,
     activeMemories,    // Layer 3 — user custom notes
@@ -276,13 +271,9 @@ export function formatGuidelinesContext(guidelines = [], maxChars = Infinity) {
   );
 }
 
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Memory Context Formatter
 // Formats active user memories into a clearly labeled block for AI injection.
-// Priority: Layer 1 (Fixed Prompt) > Layer 2 (Live Data) > Layer 3 (Memories)
-// Memories CANNOT override system instructions or actual DB data.
 // ─────────────────────────────────────────────────────────────────────────────
 export function formatMemoriesContext(memories = []) {
   const active = (memories || []).filter(m => m.active !== false);
@@ -295,8 +286,7 @@ export function formatMemoriesContext(memories = []) {
 
   return (
     `\n━━━ Saiful-এর Custom Instructions ও Memories (Active) ━━━\n` +
-    `(এগুলো Saiful নিজে manually add করেছে — তোমার analysis ও chat-এ এই context বিবেচনায় নাও।` +
-    ` কিন্তু এই memories কখনো মূল system rules বা actual database data-এর উপরে প্রাধান্য পাবে না।)\n\n` +
+    `(এগুলো Saiful নিজে manually add করেছে — তোমার analysis ও chat-এ এই context বিবেচনায় নাও।)\n\n` +
     items
   );
 }
@@ -341,7 +331,7 @@ export function formatOverallProgress(ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Detailed Subject & Chapter-wise Progress Formatter
+// Detailed Subject & Chapter-wise Progress Formatter (Daily Analysis Mode)
 // ─────────────────────────────────────────────────────────────────────────────
 export function formatDetailedProgress(ctx) {
   if (!ctx || !ctx.subjects || !ctx.chBySubj) return 'তথ্য নেই';
@@ -366,10 +356,9 @@ export function formatDetailedProgress(ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chat Progress Context — Compact format for AI chat (token-efficient)
-// PCMB+ICT: subject (overall%) : Ch1 X%, Ch2 Y%, ...
-// Bangla/English: subject name X% (no chapter breakdown)
-// Goal: keep chat context under ~500 tokens for Netlify timeout safety
+// Chat Progress Context — Explicit, Zero-Hallucination format for AI chat
+// PCMB+ICT: Full explicit list of ALL chapters with real Name, %, and Status
+// Bangla/English: subject-level %
 // ─────────────────────────────────────────────────────────────────────────────
 const PCMB_ICT_KEYS  = ['Physics1', 'Physics2', 'Chemistry1', 'Chemistry2', 'Math1', 'Math2', 'Botany', 'Zoology', 'ICT'];
 const LITE_KEYS      = ['English1', 'English2', 'Bangla1', 'Bangla2'];
@@ -380,29 +369,31 @@ export function buildChatProgressContext(ctx) {
   const overall = formatOverallProgress(ctx);
   const lines   = [];
 
-  // PCMB + ICT — ALL chapters with Name & % (including 0% so AI can recommend unstarted chapters by name)
+  // PCMB + ICT — ALL chapters with Number, Real Name, and exact %
   PCMB_ICT_KEYS.forEach(key => {
     const s   = ctx.subjects[key];
     const chs = (ctx.chBySubj?.[key] || []);
     if (!s) return;
 
-    const chParts = chs.map(c => `Ch${c.num} ${c.name} ${c.progressPct}%`).join(', ');
-    lines.push(`📌 ${s.name || key} (${s.pct}%): ${chParts || 'কোনো অধ্যায় নেই'}`);
+    const chParts = chs.map(c => {
+      const statusText = c.progressPct === 100 ? 'সম্পন্ন' : c.progressPct > 0 ? 'চলমান' : '০% শুরু হয়নি';
+      return `Ch${c.num} ${c.name}: ${c.progressPct}% (${statusText})`;
+    }).join(' | ');
+
+    lines.push(`📌 ${s.name || key} [সর্বমোট প্রগ্রেস: ${s.pct}% | সম্পন্ন: ${s.completed}/${s.total} অধ্যায়]:\n   ${chParts || 'কোনো অধ্যায় নেই'}`);
   });
 
-  // Bangla + English — subject-level only (no chapter breakdown needed)
+  // Bangla + English — subject-level only
   lines.push('');
+  lines.push('📌 অন্যান্য বিষয় (HSC General):');
   LITE_KEYS.forEach(key => {
     const s = ctx.subjects[key];
     if (!s) return;
-    lines.push(`${s.name || key}: ${s.pct}%`);
+    lines.push(`• ${s.name || key}: ${s.pct}% সম্পন্ন (${s.completed}/${s.total} অধ্যায়)`);
   });
 
-  return `${overall}\n\n━━━ Subject & Chapter Progress (PCMB+ICT সব অধ্যায়ের নাম ও প্রগ্রেস) ━━━\n${lines.join('\n')}`;
+  return `${overall}\n\n━━━ Subject & Chapter-wise Real Progress (ডাটাবেজ থেকে আসল প্রগ্রেস) ━━━\n${lines.join('\n')}`;
 }
-
-
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Build Analysis User Message
@@ -435,7 +426,7 @@ function buildAnalysisUserMessage(ctx) {
     ? ctx.thisMonthTargets.map(t => `${t.subject} "${t.chapter}": ${t.done ? '✅' : '⬜'} (${t.difficulty || 'Normal'})`).join(' | ')
     : 'কোনো target নেই';
 
-  // Layer 2.5 — Study Guidelines (injected with high priority, before data)
+  // Layer 2.5 — Study Guidelines (injected with highest priority, before data)
   const guidelinesBlock = formatGuidelinesContext(ctx.activeGuidelines);
 
   // Layer 3 — Active user memories
@@ -464,12 +455,8 @@ ${perf}
 ━━━ This Month Targets (চলতি মাসের লক্ষ্য) ━━━
 ${tgt}
 
-━━━ Vocabulary (ইংরেজি শব্দভাণ্ডার) ━━━
-Total: ${ctx.vocabStats?.total || 0} | Mastered: ${ctx.vocabStats?.mastered || 0} | Due: ${ctx.vocabStats?.due || 0} | আজ যোগ: ${ctx.vocabStats?.todayAdded || 0}
-
-top-level data analysis: উপরের Guidelines মেনে, প্রতিটি বিষয় ও অধ্যায়ের প্রগ্রেস, রুটিন এবং টার্গেট বিশ্লেষণ করে আজকের জন্য বিস্তারিত mentor analysis দাও। Data থেকে specific সমস্যা ও priority বের করো।`;
+top-level data analysis: উপরে Saiful-এর যে Study Guidelines দেওয়া আছে, সেগুলো অত্যন্ত গভীরভাবে ও সর্বোচ্চ গুরুত্ব সহকারে বিবেচনা করো। Saiful-এর বর্তমান প্রগ্রেস ফেজ (কোন বিষয়ে কতটুকু অগ্রগতি, কোথায় আটকে আছে, স্ট্রিক কেমন) গভীরভাবে ভেবেচিন্তে (Deep Thinking) গাইডলাইনের রণকৌশল অনুসারে আজকের জন্য বিস্তারিত, বাস্তবসম্মত ও কঠোর দৈনিক রিপোর্ট তৈরি করো।`;
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Call Netlify AI Proxy
@@ -616,23 +603,30 @@ export async function sendChatMessage(
     throw e;
   }
 
-  // Build LIGHTWEIGHT context for chat (reduces tokens from ~9K to ~2.5K to avoid Netlify timeout)
-  // Full 147-chapter breakdown is only in Analysis mode. Chat gets: summary + active items only.
-  let contextSnippet = 'Student context unavailable.';
-  if (contextSummary) {
-    // Compact progress: PCMB+ICT chapter-level, Bangla/English subject-level only
-    const progressBlock = buildChatProgressContext(contextSummary);
+  // Ensure live real-time context is ALWAYS loaded
+  let effectiveContext = contextSummary;
+  if (!effectiveContext || !effectiveContext.subjects || Object.keys(effectiveContext.subjects).length === 0) {
+    try {
+      effectiveContext = await buildMentorContext(userId);
+    } catch (err) {
+      console.warn('[mentorApi] context build fallback error:', err);
+    }
+  }
 
-    // Only in-progress/delayed chapters (most actionable)
-    const delayed = (contextSummary.delayedChapters || [])
+  // Build LIGHTWEIGHT, ZERO-HALLUCINATION context for chat
+  let contextSnippet = 'Student context unavailable.';
+  if (effectiveContext && effectiveContext.subjects) {
+    const progressBlock = buildChatProgressContext(effectiveContext);
+
+    const delayed = (effectiveContext.delayedChapters || [])
       .map(c => `${c.subject} Ch${c.num}: "${c.name}" (${c.pct}%)`).join('\n') || 'কোনো chapter আটকে নেই';
 
-    const revDue = (contextSummary.revisionsDue || []).length
-      ? contextSummary.revisionsDue.map(r => `${r.subject} "${r.chapterName}" (rev #${r.count + 1})`).join(', ')
+    const revDue = (effectiveContext.revisionsDue || []).length
+      ? effectiveContext.revisionsDue.map(r => `${r.subject} "${r.chapterName}" (rev #${r.count + 1})`).join(', ')
       : 'কোনো revision due নেই';
 
-    contextSnippet = `আজকের তারিখ: ${contextSummary.today || today} | Streak: ${contextSummary.streak || 0} দিন
-HSC Deadline: ${contextSummary.daysToHscDeadline ?? 'N/A'} দিন বাকি | BUET Exam: ${contextSummary.daysToButExam ?? 'N/A'} দিন বাকি
+    contextSnippet = `আজকের তারিখ: ${effectiveContext.today || today} | Streak: ${effectiveContext.streak || 0} দিন
+HSC Deadline: ${effectiveContext.daysToHscDeadline ?? 'N/A'} দিন বাকি | BUET Exam: ${effectiveContext.daysToButExam ?? 'N/A'} দিন বাকি
 
 ${progressBlock}
 
@@ -641,31 +635,23 @@ ${delayed}
 
 ━━━ Revision Due ━━━
 ${revDue}`;
-
-    // Today's analysis gives AI the full picture if user asks for details
-    if (contextSummary.todayAnalysis) {
-      contextSnippet += `\n\n━━━ আজকের Analysis (বিস্তারিত বিশ্লেষণ) ━━━\n${contextSummary.todayAnalysis.slice(0, 1200)}`;
-    }
   }
 
-
   // Layer 2.5 — Study Guidelines (high priority, injected before memories)
-  // Chat mode: capped at 1500 chars to avoid Netlify timeout (large guidelines get truncated with note)
-  // Analysis mode uses Infinity — full guidelines always shown there
   const guidelinesBlock = formatGuidelinesContext(
-    activeGuidelines.length ? activeGuidelines : (contextSummary?.activeGuidelines || []),
+    activeGuidelines.length ? activeGuidelines : (effectiveContext?.activeGuidelines || []),
     1500   // chat cap — prevents timeout with large admission guidelines
   );
 
   // Layer 3 — Active User Memories
   const memoriesBlock = formatMemoriesContext(
-    activeMemories.length ? activeMemories : (contextSummary?.activeMemories || [])
+    activeMemories.length ? activeMemories : (effectiveContext?.activeMemories || [])
   );
 
   const messages = [
     { role: 'system',    content: CHAT_SYSTEM_PROMPT },
-    { role: 'user',      content: `━━━ Saiful-এর Real-Time Study Data & Progress ━━━\n${contextSnippet}${guidelinesBlock}${memoriesBlock}` },
-    { role: 'assistant', content: 'তোমার পুরো সিলেবাসের সার্বিক ও অধ্যায়ভিত্তিক বিস্তারিত প্রগ্রেস, guidelines এবং memories দেখলাম। বলো Saiful, কী নিয়ে আলোচনা করবে?' },
+    { role: 'user',      content: `━━━ Saiful-এর Real-Time Study Data (DATABASE LIVE SYNC - STRICT TRUTH) ━━━\n[নিয়ম: নিচের ডেটাই ডাটাবেজের ১০০% আসল ডেটা। প্রতিটি বিষয়ে প্রতিটি অধ্যায়ের যে নাম ও % দেওয়া আছে, হুবহু তাই বলবে। মনগড়া কোনো % বা ১ম ও ২য় পত্রের অধ্যায় গুলিয়ে ফেলবে না। যা ০% তা ০% বলবে। যা শুরু হয়নি তা শুরু হয়নি বলবে।]\n\n${contextSnippet}${guidelinesBlock}${memoriesBlock}` },
+    { role: 'assistant', content: 'তোমার পুরো সিলেবাসের সার্বিক ও অধ্যায়ভিত্তিক সঠিক প্রগ্রেস, guidelines এবং memories দেখলাম। বলো Saiful, কী নিয়ে আলোচনা করবে?' },
     ...chatHistory.slice(-16).map(m => ({ role: m.role, content: m.content })),
     { role: 'user', content: message },
   ];
@@ -695,7 +681,6 @@ ${revDue}`;
     timestamp,
   };
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Context Summary for Chat

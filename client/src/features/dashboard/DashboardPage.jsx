@@ -8,9 +8,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Award, Flame, Target, Calendar,
-  CheckCircle2, Circle, Clock, BarChart2,
-  Lock, Unlock, Heart, ChevronRight, AlertTriangle, X,
-  GraduationCap, Sparkles, Timer, CheckSquare, Zap,
+  CheckCircle2, Circle, ChevronRight, AlertTriangle, X,
+  GraduationCap, Zap,
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '../../store';
 import {
@@ -33,8 +32,6 @@ import {
   calculateChapterProgress,
   calculateOverallProgress,
 } from '../../lib/progressEngine';
-import { useMyUnlockProgress } from '../../hooks/useMyUnlockProgress';
-import { usePartnerStats } from '../../hooks/usePartnerStats';
 import LiveStudyBanner from '../presence/LiveStudyBanner';
 import PendingSessionModal from '../../components/checkin/PendingSessionModal';
 import MorningCheckinModal from '../../components/checkin/MorningCheckinModal';
@@ -341,18 +338,14 @@ export default function DashboardPage() {
   const buetOverall = buetOverallData.progressPct;
   const chapLoading = false;
 
-  // ── Streak + Analytics ────────────────────────────────────────────────────
+  // ── Streak ───────────────────────────────────────────────────────────────
   const [streak,     setStreak]     = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
-  const [analytics,  setAnalytics]  = useState(null);
 
   useEffect(() => {
     if (!user?.uid) return;
     getWeeklyStats(user.uid, 30)
       .then(d => { setStreak(d.streak || 0); setBestStreak(d.bestStreak || d.streak || 0); })
-      .catch(() => {});
-    getWeeklyStats(user.uid, 7)
-      .then(d => setAnalytics(d))
       .catch(() => {});
   }, [user?.uid]);
 
@@ -421,15 +414,6 @@ export default function DashboardPage() {
     }, 60000);
     return () => clearInterval(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Couple Zone (real-time hooks) ─────────────────────────────────────────
-  const {
-    isUnlocked,
-    vocabCount, partnerVocabCount,
-    vocabThreshold,
-    vocabPct, partnerVocabPct,
-  } = useMyUnlockProgress();
-  const partnerStats = usePartnerStats();
 
   // ── Subject drawer ────────────────────────────────────────────────────────
   const [drawerSubject, setDrawerSubject] = useState(null);
@@ -991,222 +975,11 @@ export default function DashboardPage() {
         </motion.div>
 
         {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* SECTION 7 — 7-DAY ANALYTICS                                   */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22 }}
-          className="rounded-2xl border border-indigo-500/12 p-5"
-          style={{ background: 'linear-gradient(145deg, rgba(8,6,30,0.65) 0%, rgba(10,14,26,0.97) 60%)' }}
-        >
-          <SectionLabel icon={BarChart2} iconColor="text-indigo-400" title="7-Day Analytics" />
-
-          {!analytics ? (
-            <div className="h-28 flex items-center justify-center">
-              <div className="w-6 h-6 border-2 border-indigo-500/50 border-t-indigo-400 rounded-full animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* Bar chart */}
-              <div className="flex items-end gap-1.5 sm:gap-2 mb-5" style={{ height: 80 }}>
-                {(analytics.byDay || []).map((d, i) => {
-                  const maxScore = Math.max(...(analytics.byDay || []).map(x => x.productivityScore || 0), 1);
-                  const h = Math.max(4, Math.round(((d.productivityScore || 0) / maxScore) * 100));
-                  const score = d.productivityScore || 0;
-                  const barColor = score >= 70 ? { from: '#4f46e5', to: '#818cf8' }
-                                 : score >= 40 ? { from: '#b45309', to: '#fbbf24' }
-                                 : { from: '#991b1b', to: '#f87171' };
-                  return (
-                    <div
-                      key={i}
-                      className="flex-1 flex flex-col items-center gap-1"
-                      title={`${d.day}: ${score}%`}
-                    >
-                      <div className="w-full flex items-end justify-center" style={{ height: 64 }}>
-                        <motion.div
-                          className="w-full rounded-t-lg"
-                          style={{
-                            height: `${h}%`,
-                            background: `linear-gradient(to top, ${barColor.from}, ${barColor.to})`,
-                            minHeight: 2,
-                          }}
-                          initial={{ height: 0 }}
-                          animate={{ height: `${h}%` }}
-                          transition={{ duration: 0.5, delay: i * 0.06, ease: 'easeOut' }}
-                        />
-                      </div>
-                      <span className="text-[9px] text-white/25">{(d.day || '').slice(0, 2)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Summary grid */}
-              <div className="grid grid-cols-3 gap-3 border-t border-white/[0.05] pt-4">
-                {[
-                  { label: 'Sessions Done',  value: analytics.summary?.totalCompleted || 0, color: 'text-green-400'   },
-                  { label: 'Sessions Missed', value: analytics.summary?.totalMissed    || 0, color: 'text-red-400'    },
-                  { label: 'Avg Score',       value: `${analytics.summary?.avgScore   || 0}%`, color: 'text-indigo-400'},
-                ].map(item => (
-                  <div key={item.label} className="text-center">
-                    <p className={`text-xl font-black ${item.color}`}>{item.value}</p>
-                    <p className="text-[9px] text-white/22 mt-0.5">{item.label}</p>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </motion.div>
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* QUICK ACTIONS                                                  */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Log Session', sub: 'Check-In',  Icon: CheckSquare, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/18', path: '/checkin'  },
-            { label: 'Study Timer', sub: 'Focus mode', Icon: Timer,       color: 'text-cyan-400',    bg: 'bg-cyan-500/10    border-cyan-500/18',     path: '/timer'    },
-            { label: 'AI Analysis', sub: 'Mentor AI',  Icon: Sparkles,    color: 'text-purple-400',  bg: 'bg-purple-500/10  border-purple-500/18',   path: '/ai'       },
-          ].map(item => (
-            <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className="flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] hover:bg-white/[0.04] hover:border-white/[0.12] transition-all group active:scale-95"
-            >
-              <div className={`w-10 h-10 rounded-xl border ${item.bg} flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                <item.Icon size={17} className={item.color} />
-              </div>
-              <div className="text-center">
-                <p className="text-[11px] font-bold text-white/65">{item.label}</p>
-                <p className="text-[9px] text-white/25">{item.sub}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* SECTION 8 — MORNING ROUTINE STATUS                            */}
+        {/* MORNING ROUTINE STATUS                                         */}
         {/* ═══════════════════════════════════════════════════════════════ */}
         {morningData && (
           <MorningStatusBar checkin={morningData.checkin} onEdit={() => openModal('morning')} />
         )}
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* SECTION 9 — COUPLE ZONE (BOTTOM)                              */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.28 }}
-          className="rounded-2xl border border-rose-500/12 p-5"
-          style={{ background: 'linear-gradient(145deg, rgba(30,4,14,0.55) 0%, rgba(10,14,26,0.97) 65%)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Heart size={13} className="text-rose-400" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-white/25">Couple Zone</span>
-            </div>
-            <Link
-              to="/chat"
-              className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold transition-all ${
-                isUnlocked
-                  ? 'text-cyan-300 bg-cyan-500/10 border-cyan-500/18 hover:border-cyan-500/40'
-                  : 'text-white/25 bg-white/5 border-white/10'
-              }`}
-            >
-              {isUnlocked ? <Unlock size={9} /> : <Lock size={9} />}
-              {isUnlocked ? 'Chat Open →' : 'Locked 🔒'}
-            </Link>
-          </div>
-
-          {/* Three info cells */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-            {/* Partner presence */}
-            <div className={`rounded-xl border p-3 transition-all ${
-              partnerStats?.isStudying
-                ? 'border-purple-500/18 bg-purple-500/5'
-                : 'border-white/[0.06] bg-white/[0.01]'
-            }`}>
-              <p className="text-[9px] text-white/22 uppercase tracking-wider mb-2">Partner</p>
-              {!partner ? (
-                <p className="text-xs text-white/25">No partner linked</p>
-              ) : partnerStats?.isStudying ? (
-                <div>
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
-                    <p className="text-sm font-bold text-white truncate">{partnerStats.displayName}</p>
-                  </div>
-                  <p className="text-xs text-purple-300">📚 {partnerStats.subject}</p>
-                  {partnerStats.chapter && (
-                    <p className="text-[9px] text-white/25 mt-0.5 truncate">{partnerStats.chapter}</p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">😴</span>
-                  <p className="text-xs text-white/28">Waiting for {partner?.displayName || 'Shahinur'}…</p>
-                </div>
-              )}
-            </div>
-
-            {/* My vocab */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3">
-              <p className="text-[9px] text-white/22 uppercase tracking-wider mb-2">My Vocab</p>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className={`text-xl font-black tabular-nums ${vocabCount >= vocabThreshold ? 'text-green-400' : 'text-white'}`}>
-                  {vocabCount}
-                </span>
-                <span className="text-xs text-white/25">/ {vocabThreshold}</span>
-                {vocabCount >= vocabThreshold && <CheckCircle2 size={11} className="text-green-400 ml-0.5" />}
-              </div>
-              <ProgressBar pct={vocabPct}
-                color={vocabCount >= vocabThreshold ? '#22c55e' : 'linear-gradient(90deg, #5b21b6, #8b5cf6)'}
-                height="h-1.5"
-              />
-            </div>
-
-            {/* Partner vocab */}
-            <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3">
-              <p className="text-[9px] text-white/22 uppercase tracking-wider mb-2">
-                {partner?.displayName || 'Partner'}'s Vocab
-              </p>
-              <div className="flex items-baseline gap-1 mb-2">
-                <span className={`text-xl font-black tabular-nums ${partnerVocabCount >= vocabThreshold ? 'text-green-400' : 'text-white'}`}>
-                  {partnerVocabCount}
-                </span>
-                <span className="text-xs text-white/25">/ {vocabThreshold}</span>
-                {partnerVocabCount >= vocabThreshold && <CheckCircle2 size={11} className="text-green-400 ml-0.5" />}
-              </div>
-              <ProgressBar pct={partnerVocabPct}
-                color={partnerVocabCount >= vocabThreshold ? '#22c55e' : 'linear-gradient(90deg, #9d174d, #ec4899)'}
-                height="h-1.5"
-              />
-            </div>
-          </div>
-
-          {/* Unlock status message */}
-          <AnimatePresence>
-            {isUnlocked && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mt-3 pt-3 border-t border-cyan-500/12"
-              >
-                <p className="text-center text-xs text-cyan-400 font-medium">
-                  🔓 Chat is unlocked! Tap "Chat Open" to start your 45-min session.
-                </p>
-              </motion.div>
-            )}
-            {!isUnlocked && (
-              <motion.p
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                className="text-center text-[10px] text-white/18 mt-3"
-              >
-                Both need {vocabThreshold} vocab words to unlock chat
-              </motion.p>
-            )}
-          </AnimatePresence>
-        </motion.div>
 
       </div>{/* end px-4 space-y-5 */}
 
