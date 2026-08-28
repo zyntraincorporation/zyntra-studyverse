@@ -2327,6 +2327,20 @@ export async function deleteMentorMemory(userId, memoryId) {
   await deleteDoc(doc(db, 'users', userId, 'aiMentorMemories', memoryId));
 }
 
+function getMemoryTimestampMs(val) {
+  if (!val) return 0;
+  if (typeof val === 'number') return val;
+  if (typeof val.toMillis === 'function') return val.toMillis();
+  if (typeof val.toDate === 'function') return val.toDate().getTime();
+  if (val.seconds !== undefined) return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'string') {
+    const parsed = new Date(val).getTime();
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
 /** Fetch ALL memories (active + disabled) — for the Memory Manager UI */
 export async function getMentorMemories(userId) {
   if (!userId) return [];
@@ -2335,7 +2349,7 @@ export async function getMentorMemories(userId) {
     const snap = await getDocs(q);
     return snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      .sort((a, b) => getMemoryTimestampMs(b.createdAt) - getMemoryTimestampMs(a.createdAt));
   } catch (e) {
     console.warn('[db] getMentorMemories error:', e);
     return [];
@@ -2351,7 +2365,7 @@ export async function getActiveMentorMemories(userId) {
     return snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .filter(d => d.active !== false)
-      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      .sort((a, b) => getMemoryTimestampMs(b.createdAt) - getMemoryTimestampMs(a.createdAt));
   } catch (e) {
     console.warn('[db] getActiveMentorMemories error:', e);
     return [];
@@ -2367,7 +2381,7 @@ export function subscribeToMentorMemories(userId, callback, onError) {
     snap => {
       const list = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+        .sort((a, b) => getMemoryTimestampMs(b.createdAt) - getMemoryTimestampMs(a.createdAt));
       callback(list);
     },
     onError || console.error
